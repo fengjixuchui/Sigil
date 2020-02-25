@@ -62,11 +62,13 @@
 #include "Dialogs/EmptyLayout.h"
 #include "Dialogs/HeadingSelector.h"
 #include "Dialogs/LinkStylesheets.h"
+#include "Dialogs/ManageRepos.h"
 #include "Dialogs/MetaEditor.h"
 #include "Dialogs/PluginRunner.h"
 #include "Dialogs/Preferences.h"
 #include "Dialogs/SearchEditor.h"
 #include "Dialogs/SelectCharacter.h"
+#include "Dialogs/SelectCheckpoint.h"
 #include "Dialogs/SelectFiles.h"
 #include "Dialogs/SelectHyperlink.h"
 #include "Dialogs/SelectId.h"
@@ -596,13 +598,11 @@ void MainWindow::RepoCommit()
     // ensure epub opf has valid bookid and retrieve it
     QString bookid = m_Book->GetOPF()->GetUUIDIdentifierValue();
 
-    // update the modification date metadata to the current date and time
-    m_Book->GetOPF()->AddModificationDateMeta();
-
-    // get the primary book title in case we need it for later
-    // QString booktitle = m_Book->GetOPF()->GetPrimaryBookTitle();
-
-    QString filename = QFileInfo(m_CurrentFileName).completeBaseName();
+    // collect additional book info (file name, title, datetime)
+    QStringList bookinfo;
+    bookinfo << QFileInfo(m_CurrentFileName).completeBaseName();
+    bookinfo << m_Book->GetOPF()->GetPrimaryBookTitle();
+    bookinfo <<  m_Book->GetOPF()->AddModificationDateMeta();
 
     // finally force all changes to Disk
     SaveTabData();
@@ -623,7 +623,7 @@ void MainWindow::RepoCommit()
     // may take a while depending on the speed of the filesystem
     PythonRoutines pr;
     QFuture<QString> future = QtConcurrent::run(&pr, &PythonRoutines::PerformRepoCommitInPython, localRepo, 
-                                                bookid, filename, bookroot, bookfiles);
+                                                bookid, bookinfo, bookroot, bookfiles);
     future.waitForFinished();
     QString commit_result = future.result();
 
@@ -639,20 +639,30 @@ void MainWindow::RepoCommit()
     ShowMessageOnStatusBar(tr("Checkpoint saved."));
 }
 
-void MainWindow::RepoCheckout()
+// handle both the current epub and the general case
+void MainWindow::RepoCheckout(QString bookid, QString destdir, QString filename, bool loadnow)
 {
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-
     QString localRepo = Utility::DefinePrefsDir() + "/repo";
 
-    QString checkouts = Utility::DefinePrefsDir() + "/checkouts";
-    QDir coDir(checkouts);
+    if (destdir.isEmpty()) {
+	destdir = Utility::DefinePrefsDir() + "/checkouts";
+    }
+    QDir coDir(destdir);
     if (!coDir.exists()) {
-        coDir.mkpath(checkouts);
+        coDir.mkpath(destdir);
     }
 
-    // ensure epub opf has valid bookid and retrieve it
-    QString bookid = m_Book->GetOPF()->GetUUIDIdentifierValue();
+    if (bookid.isEmpty()) {
+        // use current epub's bookid and create one if needed
+        bookid = m_Book->GetOPF()->GetUUIDIdentifierValue();
+    }
+
+    if (filename.isEmpty()) {
+        // use current epub's filename
+        filename = QFileInfo(m_CurrentFileName).completeBaseName();
+    }
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
 
     // now perform the commit using python in a separate thread since this
     // may take a while depending on the speed of the filesystem
@@ -662,19 +672,31 @@ void MainWindow::RepoCheckout()
     QStringList tag_results = future.result();
     qDebug() << "in RepoCheckout getting tag list  with result: " << tag_results;
     if (tag_results.isEmpty()) {
-        ShowMessageOnStatusBar(tr("Checkout Failed."));
+        ShowMessageOnStatusBar(tr("Checkout Failed. No checkpoints found"));
 	QApplication::restoreOverrideCursor();
         return;
     }
 
-    // FIXME need to add dialog to select a checkout tagname from list
-    QString tagname = "V0001";
+    QApplication::restoreOverrideCursor();
 
-    // FIXME need to add dialog to select a filename?
-    QString filename = QFileInfo(m_CurrentFileName).completeBaseName();
+    // Now create a Dialog to allow the user to select a tag (checkpoint)
+    QString tagname;
+    SelectCheckpoint gettag(tag_results, this);
+    if (gettag.exec() == QDialog::Accepted) {
+	QStringList taglst  = gettag.GetSelectedEntries();
+	if (!taglst.isEmpty()) {
+	    tagname = taglst.at(0);
+	}
+    }
+    if (tagname.isEmpty()) {
+        ShowMessageOnStatusBar(tr("Checkout Failed. No checkpoint selected"));
+        return;
+    }
 
-    QFuture<QString> afuture = QtConcurrent::run(&pr, &PythonRoutines::GenerateEpubFromTagInPython, localRepo,
-						 bookid, tagname, filename, checkouts);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    QFuture<QString> afuture = QtConcurrent::run(&pr, &PythonRoutines::GenerateEpubFromTagInPython, 
+						 localRepo, bookid, tagname, filename, destdir);
     afuture.waitForFinished();
     QString epub_result = afuture.result();
     if (epub_result.isEmpty()) {
@@ -684,37 +706,117 @@ void MainWindow::RepoCheckout()
     }
     QApplication::restoreOverrideCursor();
     ShowMessageOnStatusBar(tr("Epub Generation succeeded"));
+
+    if (loadnow) {
+#ifdef Q_OS_MAC
+	MainWindow *new_window = new MainWindow(epub_result, "", true);
+	new_window->show();
+	new_window->activateWindow();
+#else
+	// For Linux and Windows will replace current book                                                      
+	// So Throw Up a Dialog to See if they want to proceed                                                  
+	bool proceed = false;
+	QMessageBox msgBox;
+	msgBox.setIcon(QMessageBox::Warning);
+	msgBox.setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
+	msgBox.setWindowTitle(tr("Repository Checkout"));
+	msgBox.setText(tr("Your current book will be completely replaced losing any unsaved changes ...  Are yo\
+u sure you want to proceed"));
+	QPushButton *yesButton = msgBox.addButton(QMessageBox::Yes);
+	QPushButton *noButton =  msgBox.addButton(QMessageBox::No);
+	msgBox.setDefaultButton(noButton);
+	msgBox.exec();
+	if (msgBox.clickedButton() == yesButton) {
+	    proceed = true;
+	}
+	if (proceed) {
+	    LoadFile(epub_result, true);
+	}
+#endif
+    }
 }
 
-void MainWindow::RepoDiff()
+void MainWindow::RepoDiff(QString bookid)
 {
-    qDebug() << "Diff Not Implemented Yet";
-}
+    QString localRepo = Utility::DefinePrefsDir() + "/repo";
+    QDir repoDir(localRepo);
+    if (!repoDir.exists()) {
+        // No repo folder, no checkpoints
+        ShowMessageOnStatusBar(tr("Diff Failed. No checkpoints found"));
+        return;
+    }
+    if (bookid.isEmpty()) {
+        // use current epub's bookid and create one if needed
+        bookid = m_Book->GetOPF()->GetUUIDIdentifierValue();
+    }
 
-void MainWindow::RepoErase()
-{
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
-    QString localRepo = Utility::DefinePrefsDir() + "/repo";
-
-    // ensure epub opf has valid bookid and retrieve it
-    QString bookid = m_Book->GetOPF()->GetUUIDIdentifierValue();
-
-    // now perform the commit using python in a separate thread since this
+    // Get tags using python in a separate thread since this
     // may take a while depending on the speed of the filesystem
     PythonRoutines pr;
-    QFuture<bool> future = QtConcurrent::run(&pr, &PythonRoutines::PerformRepoEraseInPython, localRepo, bookid);
+    QFuture<QStringList> future = QtConcurrent::run(&pr, &PythonRoutines::GetRepoTagsInPython, localRepo, bookid);
     future.waitForFinished();
-    bool erase_result = future.result();
-    qDebug() << "in RepoErase with result: " << erase_result;
-    if (!erase_result) {
-        ShowMessageOnStatusBar(tr("Book Repo erasure failed."));
-	QApplication::restoreOverrideCursor();
+    QStringList tag_results = future.result();
+    qDebug() << "in RepoDiff getting tag list  with result: " << tag_results;
+    if (tag_results.isEmpty()) {
+        ShowMessageOnStatusBar(tr("Diff Failed. No checkpoints found"));
+        QApplication::restoreOverrideCursor();
+        return;
+    }
+    QApplication::restoreOverrideCursor();
+
+    // Reuse SelectCheckpoint for the time being
+    // Now create a Dialog to allow the user to select left diff tree
+    QString chkpoint1;
+    SelectCheckpoint gettagleft(tag_results, this);
+    if (gettagleft.exec() == QDialog::Accepted) {
+        QStringList taglst  = gettagleft.GetSelectedEntries();
+        if (!taglst.isEmpty()) {
+            chkpoint1 = taglst.at(0);
+        }
+    }
+    if (chkpoint1.isEmpty()) {
+        ShowMessageOnStatusBar(tr("Diff Failed. No left checkpoint selected for comparison"));
         return;
     }
 
+    // Now create a Dialog to allow the user to select right diff tree
+    QString chkpoint2;
+    SelectCheckpoint gettagright(tag_results, this);
+    if (gettagright.exec() == QDialog::Accepted) {
+        QStringList taglst  = gettagright.GetSelectedEntries();
+        if (!taglst.isEmpty()) {
+            chkpoint2 = taglst.at(0);
+        }
+    }
+    if (chkpoint2.isEmpty()) {
+        ShowMessageOnStatusBar(tr("Diff Failed. No right checkpoint selectedfor comparison"));
+        return;
+    }
+
+    // TODO: implement a way to use current bookfiles as right diff tree
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    QFuture<QString> afuture = QtConcurrent::run(&pr, &PythonRoutines::GenerateDiffFromCheckPoints, 
+                         localRepo, bookid, chkpoint1, chkpoint2);
+    afuture.waitForFinished();
+    QString diff_result = afuture.result();
+    if (diff_result.isEmpty()) {
+        ShowMessageOnStatusBar(tr("Diff failed"));
+        QApplication::restoreOverrideCursor();
+        return;
+    }
+    // Dulwich unified diff for now. May eventually build diffs from "live" trees in C++.
     QApplication::restoreOverrideCursor();
-    ShowMessageOnStatusBar(tr("Book Repo was Erased"));
+    ShowMessageOnStatusBar(tr("Diff successful"));
+    qDebug() << diff_result;
+   
+}
+
+void MainWindow::RepoManage()
+{
+    ManageRepos mr(this);
+    mr.exec();
 }
 
 void MainWindow::launchExternalXEditor()
@@ -5356,10 +5458,10 @@ void MainWindow::ExtendIconSizes()
     icon.addFile(QString::fromUtf8(":/main/git-diff_22px.png"));
     ui.actionDiff->setIcon(icon);
 
-    icon = ui.actionEraseRepo->icon();
-    icon.addFile(QString::fromUtf8(":/main/git-erase_16px.png"));
-    icon.addFile(QString::fromUtf8(":/main/git-erase_22px.png"));
-    ui.actionEraseRepo->setIcon(icon);
+    icon = ui.actionManageRepo->icon();
+    icon.addFile(QString::fromUtf8(":/main/git-manage_16px.png"));
+    icon.addFile(QString::fromUtf8(":/main/git-manage_22px.png"));
+    ui.actionManageRepo->setIcon(icon);
 
     icon = ui.actionXEditor->icon();
     icon.addFile(QString::fromUtf8(":/main/document-edit_16px.png"));
@@ -5788,7 +5890,7 @@ void MainWindow::ConnectSignalsToSlots()
     connect(ui.actionCommit,        SIGNAL(triggered()), this, SLOT(RepoCommit()));
     connect(ui.actionCheckout,      SIGNAL(triggered()), this, SLOT(RepoCheckout()));
     connect(ui.actionDiff,          SIGNAL(triggered()), this, SLOT(RepoDiff()));
-    connect(ui.actionEraseRepo,     SIGNAL(triggered()), this, SLOT(RepoErase()));
+    connect(ui.actionManageRepo,    SIGNAL(triggered()), this, SLOT(RepoManage()));
 
     // Edit
     connect(ui.actionXEditor,         SIGNAL(triggered()), this, SLOT(launchExternalXEditor()));

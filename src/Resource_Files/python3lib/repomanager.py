@@ -24,11 +24,17 @@ import sys
 import os
 import re
 import shutil
+import datetime
+import time
+import io
 
 import dulwich
 from dulwich import porcelain
 from dulwich.repo import Repo
 from dulwich.porcelain import open_repo_closing
+from dulwich.objects import Tag, Commit, Blob, check_hexsha, ShaFile, Tree, format_timezone
+from dulwich.refs import ANNOTATED_TAG_SUFFIX
+from dulwich.patch import write_tree_diff
 
 import zlib
 import zipfile
@@ -183,13 +189,21 @@ def add_gitattributes(repo_path):
     with open(os.path.join(repo_path, ".gitattributes"),'wb') as f3:
         f3.write(data)
 
-def add_bookinfo(repo_path, filename, bookid):
-    bookinfo = []
-    bookinfo.append(filename)
-    bookinfo.append(bookid)
-    bookinfo.append("")
-    data = "\n".join(bookinfo).encode('utf-8')
-    with open(os.path.join(repo_path, ".bookinfo"),'wb') as f2:
+def add_bookinfo(repo_path, bookinfo, bookid, tagname):
+    binfo_path = os.path.join(repo_path,".bookinfo");
+    if os.path.exists(binfo_path):
+        os.remove(binfo_path)
+    (filename, booktitle, datetime) = bookinfo
+    booktitle = booktitle.replace("\n", " ")
+    bkdata = []
+    bkdata.append(filename)
+    bkdata.append(booktitle)
+    bkdata.append(datetime)
+    bkdata.append(tagname)
+    bkdata.append(bookid)
+    bkdata.append("")
+    data = "\n".join(bkdata).encode('utf-8')
+    with open(binfo_path,'wb') as f2:
         f2.write(data)
 
 # return True if file should be copied to destination folder
@@ -204,6 +218,8 @@ def valid_file_to_copy(rpath):
 
 # clean dulwich repo skipping specific files and folders
 # returns true on success, false otherwise
+# folder is a full path to the folder
+# make sure the cwd is not this folder to prevent erase issues
 def cleanWorkingDir(folder):
     result = True
     if os.path.exists(folder):
@@ -247,6 +263,7 @@ def build_epub_from_folder_contents(foldpath, epub_filepath):
 
 # will lose any untracked or unstaged changes    
 # so add and commit to keep them before using this
+# repo_path here must be a full path
 def checkout_tag(repo_path, tagname):
     result = True
     cdir = os.getcwd()
@@ -255,14 +272,22 @@ def checkout_tag(repo_path, tagname):
     os.chdir(repo_path)
     with open_repo_closing(".") as r:
         tagkey = utf8_str("refs/tags/" + tagname)
-        r.reset_index(r[tagkey].tree)
+        refkey = tagkey
+        # if annotated tag get the commit it pointed to
+        if isinstance(r[tagkey], Tag):
+            refkey = r[tagkey].object[1]
+        r.reset_index(r[refkey].tree)
         # use this to reset HEAD to this tag (ie. revert)
         # r.refs.set_symbolic_ref(b"HEAD", tagkey)
+        # cd out **before** the repo closes
+        os.chdir(cdir) 
     os.chdir(cdir)
     return result
 
+
 # will lose any untracked or unstaged changes    
 # so add and commit to keep them before using this
+# repo_path must be a full path
 # Note: the Working Directory should always be left with HEAD checked out
 def checkout_head(repo_path):
     result = True
@@ -273,8 +298,45 @@ def checkout_head(repo_path):
     os.chdir(repo_path)
     with open_repo_closing(".") as r:
         r.reset_index(r[b"HEAD"].tree)
+        # cd out **before** the repo closes
+        os.chdir(cdir)
     os.chdir(cdir)
     return result
+
+def clone_repo_and_checkout_tag(localRepo, bookid, tagname, filename, dest_path):
+    repo_home = pathof(localRepo)
+    repo_home = repo_home.replace("/", os.sep)
+    repo_path = os.path.join(repo_home, "epub_" + bookid)
+    dest_path = dest_path.replace("/", os.sep)
+    cdir = os.getcwd()
+    # first verify both repo and tagname exist
+    taglst = []
+    if os.path.exists(repo_path):
+        if not os.path.exists(dest_path): return ""
+        os.chdir(repo_path)
+        tags = porcelain.list_tags(repo='.')
+        for atag in tags:
+            taglst.append(unicode_str(atag))
+        # use dest_path to clone into
+        # clone current repo "s" into new repo "r"
+        with open_repo_closing(".") as s:
+            s.clone(dest_path, mkdir=False, bare=False, origin=b"origin", checkout=False)
+            # cd out **before** the repo closes
+            os.chdir(dest_path)
+        with open_repo_closing(".") as r:
+            if tagname not in taglist or tagname == "HEAD":
+                tagkey = utf8_str("HEAD")
+            else:
+                tagkey = utf8_str("refs/tags/" + tagname)
+            refkey = tagkey
+            # if annotated tag get the commit id it pointed to instead
+            if isinstance(r[tagkey], Tag):
+                refkey = r[tagkey].object[1]
+            r.reset_index(r[refkey].tree)
+            r.refs.set_symbolic_ref(b"HEAD", tagkey)
+            # cd out **before** the repo closes
+            os.chdir(cdir)
+    return "success"
 
 
 # the entry points from Cpp
@@ -291,34 +353,33 @@ def generate_epub_from_tag(localRepo, bookid, tagname, filename, dest_path):
     if os.path.exists(repo_path):
         os.chdir(repo_path)
         tags = porcelain.list_tags(repo='.')
+        os.chdir(cdir)
         for atag in tags:
             taglst.append(unicode_str(atag))
         if tagname not in taglst:
             return epub_file_path
-        # make a temporary repo to clone into
-        # workaround to the fact that dulwich does not support clean checkouts
-        # of branches or tags into existing working directories nor does it support merges
-        with make_temp_directory() as scratchrepo:
-            # should clone current repo "s" into scratchrepo "r"
-            with open_repo_closing(".") as s:
-                s.clone(scratchrepo, mkdir=False, bare=False, origin=b"origin", checkout=False)
-            os.chdir(scratchrepo)
-            with open_repo_closing(".") as r:
-                tagkey = utf8_str("refs/tags/" + tagname)
-                r.reset_index(r[tagkey].tree)
-                r.refs.set_symbolic_ref(b"HEAD", tagkey)
-            os.chdir(cdir)
 
-            # working directory of scratch repo should now be populated
-            epub_filepath = os.path.join(dest_path, epub_name)
-            try:
-                build_epub_from_folder_contents(scratchrepo, epub_filepath)
-            except Exception as e:
-                print("epub creation failed")
-                print(str(e))
-                epub_filepath = ""
-                pass
-        os.chdir(cdir)
+        # FIXME: there should **never** be unstaged changes or untracked files
+        # in the repo because of how Sigil handles it, but we really should use
+        # dulwich status to verify that before proceeding and abort otherwise.
+        # Just in case the user uses command line git to manipulate the repo 
+        # outside of Sigil's control leaving it in a dirty state
+
+        # Instead of cloning an entire repo just to do a checkout
+        # of a tag, do all work in the current repo
+        checkout_tag(repo_path, tagname)
+
+        # working directory of the repo should now be populated
+        epub_filepath = os.path.join(dest_path, epub_name)
+        try:
+            build_epub_from_folder_contents(repo_path, epub_filepath)
+        except Exception as e:
+            print("epub creation failed")
+            print(str(e))
+            epub_filepath = ""
+            pass
+        # **always** restore the repo working directory HEAD before leaving
+        checkout_head(repo_path)
     return epub_filepath
 
 
@@ -330,15 +391,31 @@ def get_tag_list(localRepo, bookid):
     taglst = []
     if os.path.exists(repo_path):
         os.chdir(repo_path)
-        # determine the new tag
-        tags = porcelain.list_tags(repo='.')
-        for atag in tags:
-            taglst.append(unicode_str(atag))
+        with open_repo_closing(".") as r:
+            tags = sorted(r.refs.as_dict(b"refs/tags"))
+            for atag in tags:
+                tagkey = b"refs/tags/" + atag
+                obj = r[tagkey]
+                tag_name = unicode_str(atag)
+                tag_message = ""
+                tag_date = ""
+                if isinstance(obj,Tag):
+                    time_tuple = time.gmtime(obj.tag_time + obj.tag_timezone)
+                    time_str = time.strftime("%a %b %d %Y %H:%M:%S",time_tuple)
+                    timezone_str = format_timezone(obj.tag_timezone).decode('ascii')
+                    tag_date = time_str + " " + timezone_str
+                    tag_message = unicode_str(obj.message)
+                if isinstance(obj, Commit):
+                    time_tuple = time.gmtime(obj.author_time + obj.author_timezone)
+                    time_str = time.strftime("%a %b %d %Y %H:%M:%S",time_tuple)
+                    timezone_str = format_timezone(obj.author_timezone).decode('ascii')
+                    tag_date = time_str + " " + timezone_str
+                    tag_message = unicode_str(obj.message)
+                taglst.append(tag_name + "|" + tag_date + "|" + tag_message)
         os.chdir(cdir)
     return taglst
 
-
-def performCommit(localRepo, bookid, filename, bookroot, bookfiles):
+def performCommit(localRepo, bookid, bookinfo, bookroot, bookfiles):
     has_error = False
     staged = []
     added=[]
@@ -395,8 +472,9 @@ def performCommit(localRepo, bookid, filename, bookroot, bookfiles):
         (added, ignored) = porcelain.add(repo='.', paths=files_to_update)
         commit_sha1 = porcelain.commit(repo='.',message=message, author=_SIGIL, committer=_SIGIL)
         # create annotated tags so we can get a date history
-        tag = porcelain.tag_create(repo='.', tag=tagname, message=tagmessage, annotated=False, author=_SIGIL)
+        tag = porcelain.tag_create(repo='.', tag=tagname, message=tagmessage, annotated=True, author=_SIGIL)
         os.chdir(cdir)
+        add_bookinfo(repo_path, bookinfo, bookid, unicode_str(tagname))
     else:
         # this will be an initial commit to this repo
         tagname = b"V0001"
@@ -412,14 +490,15 @@ def performCommit(localRepo, bookid, filename, bookroot, bookfiles):
         (added, ignored) = porcelain.add(repo='.',paths=staged)
         # it seems author, committer, messages, and tagname only work with bytes if annotated=True
         commit_sha1 = porcelain.commit(repo='.',message=message, author=_SIGIL, committer=_SIGIL)
-        tag = porcelain.tag_create(repo='.', tag=tagname, message=tagmessage, annotated=False, author=_SIGIL)
+        tag = porcelain.tag_create(repo='.', tag=tagname, message=tagmessage, annotated=True, author=_SIGIL)
         os.chdir(cdir)
-        add_bookinfo(repo_path, filename, bookid)
+        add_bookinfo(repo_path, bookinfo, bookid, unicode_str(tagname))
     result = "\n".join(added);
     result = result + "***********" + "\n".join(ignored)
     if not has_error:
         return result;
     return ''
+
 
 def eraseRepo(localRepo, bookid):
     repo_home = pathof(localRepo)
@@ -436,6 +515,30 @@ def eraseRepo(localRepo, bookid):
             success = 0
             pass
     return success
+
+
+def generate_diff_from_checkpoints(localRepo, bookid, leftchkpoint, rightchkpoint):
+    repo_home = pathof(localRepo)
+    repo_home = repo_home.replace("/", os.sep)
+    repo_path = os.path.join(repo_home, "epub_" + bookid)
+    success = True
+    if os.path.exists(repo_path):
+        os.chdir(repo_path)
+        with open_repo_closing(".") as r:
+            tags = r.refs.as_dict(b"refs/tags")
+            commit1 = r[r[tags[utf8_str(leftchkpoint)]].object[1]]
+            commit2 = r[r[tags[utf8_str(rightchkpoint)]].object[1]]
+            output = io.BytesIO()
+            try:
+                write_tree_diff(output, r.object_store, commit1.tree, commit2.tree)
+            except Exception as e:
+                print("diff failed in python")
+                print(str(e))
+                success = False
+                pass
+        if success:
+            return output.getvalue()
+        return ''
 
 
 def main():
