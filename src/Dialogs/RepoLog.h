@@ -19,50 +19,35 @@
  **
  *************************************************************************/
 
-#pragma once
-#ifndef MANAGEREPOS_H
-#define MANAGEREPOS_H
+#ifndef REPOLOG_H
+#define REPOLOG_H
 
-#include <QtGui/QStandardItemModel>
+#include <QString>
+#include <QDialog>
 
-#include "ui_ManageRepos.h"
+#include "ui_RepoLog.h"
 
-class QComboBox;
+class RepoLog : public QDialog
 
-class ManageRepos : public QDialog
 {
     Q_OBJECT
 
 public:
-    ManageRepos(QWidget* parent);
-    ~ManageRepos();
+    RepoLog(const QString& logdata, QWidget *parent);
+    ~RepoLog();
 
-private slots:
-    void ShowLog();
-    void RemoveRepo();
-    void RemoveAllRepos();
-    void RepoSelected(int row, int col);
+
+public slots:
+    int exec();
+    void reject();
 
 private:
-    enum PluginFields {
-        FileField        = 0,
-        TitleField       = 1,
-        ModifiedField    = 2,
-        VersionField     = 3,
-        UUIDField        = 4,
-    };
-
-    void WriteSettings();
     void ReadSettings();
-    void SetRepoList();
-    void InitializeTable();
-    QStringList GetBookInfo(const QString &reponame);
-    void SetRepoTableRow(const QStringList &fields, int row);
-    void ConnectSignalsToSlots();
+    void WriteSettings();
+    void connectSignalsToSlots();
 
-    Ui::ManageRepos ui;
+    QString m_LogData;
 
-    QStringList m_repoList;
+    Ui::RepoLog ui;
 };
-
-#endif // MANAGEREPOS_H
+#endif

@@ -66,6 +66,7 @@
 #include "Dialogs/MetaEditor.h"
 #include "Dialogs/PluginRunner.h"
 #include "Dialogs/Preferences.h"
+#include "Dialogs/RepoLog.h"
 #include "Dialogs/SearchEditor.h"
 #include "Dialogs/SelectCharacter.h"
 #include "Dialogs/SelectCheckpoint.h"
@@ -809,8 +810,9 @@ void MainWindow::RepoDiff(QString bookid)
     // Dulwich unified diff for now. May eventually build diffs from "live" trees in C++.
     QApplication::restoreOverrideCursor();
     ShowMessageOnStatusBar(tr("Diff successful"));
+    RepoLog rl(diff_result, this);
+    rl.exec();
     qDebug() << diff_result;
-   
 }
 
 void MainWindow::RepoManage()
@@ -4425,7 +4427,6 @@ void MainWindow::SetNewBook(QSharedPointer<Book> new_book)
 void MainWindow::ResourcesAddedOrDeletedOrMoved()
 {
     // MainWindow::clearMemoryCaches();
-
     m_Book->GetFolderKeeper()->RefreshGroupFolders();
 
     // Make sure currently visible tab is updated immediately

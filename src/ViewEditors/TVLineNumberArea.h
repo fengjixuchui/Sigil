@@ -1,9 +1,9 @@
 /************************************************************************
 **
-**  Copyright (C) 2019 Kevin B. Hendricks, Stratford, Ontario, Canada
-**  Copyright (C) 2020 Doug Massay
-**  Copyright (C) 2012 John Schember <john@nachtimwald.com>
-**  Copyright (C) 2012 Dave Heiland
+**  Copyright (C) 2020      Kevin B. Hendricks, Stratford Ontario Canada
+**
+**  Based on LineNumberArea.h which was:
+**    Copyright (C) 2009-2011 Strahinja Markovic  <strahinja.markovic@gmail.com>, Nokia Corporation
 **
 **  This file is part of Sigil.
 **
@@ -23,40 +23,34 @@
 *************************************************************************/
 
 #pragma once
-#ifndef TABBAR_H
-#define TABBAR_H
+#ifndef TVLINENUMBERAREA_H
+#define TVLINENUMBERAREA_H
 
-#include <QtWidgets/QTabBar>
+class TextView;
 
-class QContextMenuEvent;
-
-class TabBar : public QTabBar
+class TVLineNumberArea : public QWidget
 {
-    Q_OBJECT
 
 public:
-    TabBar(QWidget *parent = 0);
+    // The parameter is the TextView to
+    // which this line number area belongs to
+    TVLineNumberArea(TextView *viewer);
 
-signals:
-    void TabBarClicked();
-    void TabBarDoubleClicked();
-    void CloseOtherTabsRequest(int tab_index);
+    // Implements QWidget::sizeHint();
+    // Asks the TextView which width should it take
+    QSize sizeHint() const;
 
 protected:
-    void mouseDoubleClickEvent(QMouseEvent *event);
-    void mousePressEvent(QMouseEvent *event);
-    void mouseMoveEvent(QMouseEvent *event);
 
-private slots:
-    void EmitCloseOtherTabs();
-    void processDelayTimer();
+    // The line number area delegates its rendering
+    // to the TextView that owns it.
+    void paintEvent(QPaintEvent *event);
 
 private:
-    void ShowContextMenu(QMouseEvent *event, int tab_index);
 
-    int m_TabIndex;
-    class QTimer *m_MoveDelay;
-    bool is_ok_to_move = false;
+    // The TextView to which this line number area belongs to
+    TextView *m_TextViewer;
 };
 
-#endif // TABBAR_H
+#endif // TVLINENUMBERAREA_H
+
