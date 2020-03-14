@@ -19,50 +19,57 @@
  **
  *************************************************************************/
 
-#ifndef REPOLOG_H
-#define REPOLOG_H
+#ifndef CPCOMPARE_H
+#define CPCOMPARE_H
 
 #include <QString>
 #include <QStringList>
-#include <QList>
-#include <QLabel>
+#include <QWidget>
 #include <QDialog>
 
-class Navigator2;
-class TextView;
+class QToolButton;
 class QVBoxLayout;
+class ListSelector;
 
-class RepoLog : public QDialog
+class CPCompare : public QDialog
 
 {
     Q_OBJECT
 
 public:
 
-    RepoLog(const QString& lbl, const QString& data, QWidget *parent);
-    ~RepoLog();
+    CPCompare(const QString& bookroot, 
+	      const QString& cpdir, 
+	      const QStringList& dlist,
+	      const QStringList& alist,
+	      const QStringList& mlist,
+	      QWidget* parent);
 
-    void LoadViewer();
+    ~CPCompare();
 
 public slots:
     int exec();
     void reject();
-    void next_page(int dir);
-    void do_search(bool reverse=false);
+    void accept();
+    void handle_del_request();
+    void handle_add_request();
+    void handle_mod_request();
 
-protected:
-    void keyPressEvent(QKeyEvent * ev);
+    // protected:
+    //void keyPressEvent(QKeyEvent * ev);
 
 private:
     void ReadSettings();
     void WriteSettings();
     void connectSignalsToSlots();
+    void handle_cleanup();
 
-    QStringList   m_blockmap;
-    TextView*     m_view;
-    Navigator2*   m_nav;
-    QLabel*       m_lbl;
-    QString       m_data;
+    QString       m_bookroot;
+    QString       m_cpdir;
+    QToolButton*  m_bp;
+    ListSelector* m_dlist;
+    ListSelector* m_alist;
+    ListSelector* m_mlist;
     QVBoxLayout*  m_layout;
 };
 #endif

@@ -38,6 +38,7 @@ class QWidget;
 class QShortcut;
 class TVLineNumberArea;
 class QContextMenuEvent;
+class QSyntaxHighlighter;
 
 /**
  * A text viewer for source code and general text.
@@ -48,10 +49,17 @@ class TextView : public QPlainTextEdit
 
 public:
 
+    enum HighlighterType {
+        Highlight_NONE,  /**< No source code highlighting */
+        Highlight_XHTML, /**< XHTML source code highlighting */
+        Highlight_CSS    /**< CSS source code highlighting */
+    };
+
     TextView(QWidget *parent = 0);
     ~TextView();
 
-    // void SetAppearance();
+    void SetAppearance();
+    void SetAppearanceColors();
 
     QSize sizeHint() const;
 
@@ -64,6 +72,9 @@ public:
     void ScrollToTop();
     void ScrollToPosition(int cursor_position, bool center_screen = true);
     void ScrollToBlock(int bnum);
+
+    void DoHighlightDocument(HighlighterType highlighter_type);
+    void RehighlightDocument();
 
     static QString rstrip_pad(const QString& str);
     QString selected_text_from_cursor(const QTextCursor& cursor) const;
@@ -87,6 +98,9 @@ public:
     QString GetSelectedText();
 
     void setBlockMap(const QStringList& blockmap);
+
+public slots:
+    void Refresh(HighlighterType hightype);
 
 signals:
 
@@ -127,11 +141,11 @@ private:
 
     void ConnectSignalsToSlots();
 
-
-    // SettingsStore::TextViewAppearance m_textViewAppearance;
+    SettingsStore::CodeViewAppearance m_codeViewAppearance;
     TVLineNumberArea *m_LineNumberArea;
     QStringList  m_blockmap;
     QScrollBar* m_verticalScrollBar;
+    QSyntaxHighlighter * m_Highlighter;
 };
 
-#endif // CODEVIEWEDITOR_H
+#endif // TEXTVIEW_H

@@ -38,18 +38,27 @@
 #include "ViewEditors/Navigator2.h"
 #include "Misc/SettingsStore.h"
 #include "Misc/Utility.h"
-#include "Dialogs/RepoLog.h"
+#include "MainUI/MainApplication.h"
+#include "Dialogs/SourceViewer.h"
 
-static const QString SETTINGS_GROUP = "repo_log";
+static const QString SETTINGS_GROUP = "source_viewer";
 
-RepoLog::RepoLog(const QString&lbl, const QString& data, QWidget *parent)
+static const QStringList XML_EXTENSIONS = QStringList() << "htm" << "html" << "xhtml" <<
+							   "ncx" << "opf" << "pls" << "smil" <<
+							   "svg" << "ttml" << "xml" << "xpgt";
+
+static const QStringList CSS_EXTENSIONS = QStringList() << "css";
+
+SourceViewer::SourceViewer(const QString&file1, const QString& data, QWidget *parent)
     : QDialog(parent),
       m_view(new TextView(this)),
-      m_lbl(new QLabel(lbl, this)),
+      m_lbl(new QLabel(file1, this)),
       m_nav(new Navigator2(this)),
       m_data(data),
       m_layout(new QVBoxLayout(this))
 {
+    setAttribute(Qt::WA_DeleteOnClose,true);
+    QString ext = file1.split(".").last().toLower();
     // handle the layout manually
     m_layout->addWidget(m_lbl);
     m_layout->addWidget(m_view);
@@ -63,20 +72,46 @@ RepoLog::RepoLog(const QString&lbl, const QString& data, QWidget *parent)
 
     ReadSettings();
     LoadViewer();
+    m_hightype = TextView::Highlight_NONE;
+    if (XML_EXTENSIONS.contains(ext)) {
+	m_hightype = TextView::Highlight_XHTML;
+	m_view->DoHighlightDocument(m_hightype);
+    }
+    if (CSS_EXTENSIONS.contains(ext)) {
+	m_hightype = TextView::Highlight_CSS;
+	m_view->DoHighlightDocument(m_hightype);
+    }
     connectSignalsToSlots();
 }
 
-RepoLog::~RepoLog()
+SourceViewer::~SourceViewer()
 {
     WriteSettings();
 }
 
-void RepoLog::LoadViewer()
+
+// This is needed on macOS to force the 
+// syntax highlighting to start from scratch
+// when dark to light mode is switched dynamically
+void SourceViewer::ReloadViewer()
 {
+    // This will force the TextView to delete its current XHTMLHighlighter and 
+    // if needed install a freshly created one.  This is all because of a bug 
+    // in QSyntaxHighlighting that can not detect color format changes alone 
+    // if the exact same ranges were previously formatted
+    m_view->Refresh(m_hightype);
+}
+
+void SourceViewer::LoadViewer()
+{
+    int blockno = 0;
+    int lineno = 1;
     QStringList recs = m_data.split("\n");
     foreach(QString rec, recs) {
 	m_view->insertPlainText(rec + "\n");
-	m_blockmap << "";
+	m_blockmap << QString::number(lineno);
+	blockno++;
+	lineno++;
     }
     m_view->setBlockMap(m_blockmap);
 
@@ -87,7 +122,7 @@ void RepoLog::LoadViewer()
     m_view->GetVerticalScrollBar()->setValue(0);
 }
 
-void RepoLog::next_page(int dir)
+void SourceViewer::next_page(int dir)
 {
     int d = 1;
     if (dir < 0) d = -1;
@@ -98,7 +133,7 @@ void RepoLog::next_page(int dir)
     }
 }
 
-void RepoLog::do_search(bool reverse)
+void SourceViewer::do_search(bool reverse)
 {
     QString stext = m_nav->get_search_text();
     if (stext.simplified().isEmpty()) return;
@@ -111,7 +146,7 @@ void RepoLog::do_search(bool reverse)
     }
 }
 
-void RepoLog::keyPressEvent(QKeyEvent * ev)
+void SourceViewer::keyPressEvent(QKeyEvent * ev)
 {
     if ((ev->key() == Qt::Key_Enter) || (ev->key() == Qt::Key_Return)) return;
 
@@ -139,7 +174,7 @@ void RepoLog::keyPressEvent(QKeyEvent * ev)
     return QDialog::keyPressEvent(ev);
 }
 
-void RepoLog::ReadSettings()
+void SourceViewer::ReadSettings()
 {
     SettingsStore settings;
     settings.beginGroup(SETTINGS_GROUP);
@@ -150,7 +185,7 @@ void RepoLog::ReadSettings()
     settings.endGroup();
 }
 
-void RepoLog::WriteSettings()
+void SourceViewer::WriteSettings()
 {
     SettingsStore settings;
     settings.beginGroup(SETTINGS_GROUP);
@@ -158,19 +193,23 @@ void RepoLog::WriteSettings()
     settings.endGroup();
 }
 
-int RepoLog::exec()
+int SourceViewer::exec()
 {
     return QDialog::exec();
 }
 
 // should cover both escape key use and using x to close the runner dialog
-void RepoLog::reject()
+void SourceViewer::reject()
 {
     QDialog::reject();
 }
 
-void RepoLog::connectSignalsToSlots()
+void SourceViewer::connectSignalsToSlots()
 {
+#ifdef Q_OS_MAC
+    MainApplication *mainApplication = qobject_cast<MainApplication *>(qApp);
+    connect(mainApplication, SIGNAL(applicationPaletteChanged()), this, SLOT(ReloadViewer()));
+#endif
     connect(m_nav, SIGNAL(NextPage(int)), this, SLOT(next_page(int)));
     connect(m_nav, SIGNAL(DoSearch(bool)),  this, SLOT(do_search(bool)));
     connect(m_nav, SIGNAL(DoDone()),        this, SLOT(accept()));

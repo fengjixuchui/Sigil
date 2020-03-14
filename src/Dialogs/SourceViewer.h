@@ -19,28 +19,27 @@
  **
  *************************************************************************/
 
-#ifndef REPOLOG_H
-#define REPOLOG_H
+#ifndef SOURCEVIEWER_H
+#define SOURCEVIEWER_H
 
 #include <QString>
 #include <QStringList>
 #include <QList>
 #include <QLabel>
 #include <QDialog>
+#include "ViewEditors/TextView.h"
 
 class Navigator2;
-class TextView;
-class QVBoxLayout;
 
-class RepoLog : public QDialog
+class SourceViewer : public QDialog
 
 {
     Q_OBJECT
 
 public:
 
-    RepoLog(const QString& lbl, const QString& data, QWidget *parent);
-    ~RepoLog();
+    SourceViewer(const QString& file1, const QString& data, QWidget *parent);
+    ~SourceViewer();
 
     void LoadViewer();
 
@@ -49,6 +48,7 @@ public slots:
     void reject();
     void next_page(int dir);
     void do_search(bool reverse=false);
+    void ReloadViewer();
 
 protected:
     void keyPressEvent(QKeyEvent * ev);
@@ -59,10 +59,12 @@ private:
     void connectSignalsToSlots();
 
     QStringList   m_blockmap;
+    QString       m_filepath;
     TextView*     m_view;
     Navigator2*   m_nav;
     QLabel*       m_lbl;
     QString       m_data;
     QVBoxLayout*  m_layout;
+    TextView::HighlighterType m_hightype;
 };
 #endif

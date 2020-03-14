@@ -149,6 +149,11 @@ set( DIALOG_FILES
     Dialogs/RepoLog.h
     Dialogs/ChgViewer.cpp
     Dialogs/ChgViewer.h
+    Dialogs/SourceViewer.cpp
+    Dialogs/SourceViewer.h
+    Dialogs/ListSelector.h
+    Dialogs/CPCompare.cpp
+    Dialogs/CPCompare.h
     Dialogs/RERenamer.cpp
     Dialogs/RERenamer.h
     Dialogs/RETable.cpp
@@ -375,6 +380,7 @@ set( SPCRE_FILES
 
 set( VIEW_EDITOR_FILES
     ViewEditors/Navigator.h
+    ViewEditors/Navigator2.h
     ViewEditors/TextView.cpp
     ViewEditors/TextView.h
     ViewEditors/TVLineNumberArea.cpp
@@ -461,7 +467,6 @@ set( UI_FILES
     Form_Files/DeleteStyles.ui
     Form_Files/ManageRepos.ui
     Form_Files/OpenWithName.ui
-    Form_Files/RepoLog.ui
     Form_Files/RERenamer.ui
     Form_Files/RETable.ui
     Form_Files/SelectCharacter.ui
