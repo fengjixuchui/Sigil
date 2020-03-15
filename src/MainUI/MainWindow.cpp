@@ -625,13 +625,11 @@ void MainWindow::RepoCommit()
     // now perform the commit using python in a separate thread since this
     // may take a while depending on the speed of the filesystem
     PythonRoutines pr;
-    QFuture<QString> future = QtConcurrent::run(&pr, &PythonRoutines::PerformRepoCommitInPython, localRepo, 
-                                                bookid, bookinfo, bookroot, bookfiles);
+    QFuture<QString> future = QtConcurrent::run(&pr, &PythonRoutines::PerformRepoCommitInPython, 
+						localRepo, bookid, bookinfo, bookroot, bookfiles);
     future.waitForFinished();
     QString commit_result = future.result();
 
-    qDebug() << "echo from python";
-    qDebug() << commit_result;
     if (commit_result.isEmpty()) {
         ShowMessageOnStatusBar(tr("Checkpoint generation failed."));
 	QApplication::restoreOverrideCursor();
@@ -667,13 +665,13 @@ void MainWindow::RepoCheckout(QString bookid, QString destdir, QString filename,
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
-    // now perform the commit using python in a separate thread since this
+    // now perform the operation using python in a separate thread since this
     // may take a while depending on the speed of the filesystem
     PythonRoutines pr;
-    QFuture<QStringList> future = QtConcurrent::run(&pr, &PythonRoutines::GetRepoTagsInPython, localRepo, bookid);
+    QFuture<QStringList> future = QtConcurrent::run(&pr, &PythonRoutines::GetRepoTagsInPython, 
+						         localRepo, bookid);
     future.waitForFinished();
     QStringList tag_results = future.result();
-    qDebug() << "in RepoCheckout getting tag list  with result: " << tag_results;
     if (tag_results.isEmpty()) {
         ShowMessageOnStatusBar(tr("Checkout Failed. No checkpoints found"));
 	QApplication::restoreOverrideCursor();
@@ -696,6 +694,20 @@ void MainWindow::RepoCheckout(QString bookid, QString destdir, QString filename,
         return;
     }
 
+    // Save the current state of open tabs, putting the current tab last
+    QStringList open_tab_bookpaths;
+    QList<int> open_tab_positions;
+    Resource * current_resource = m_TabManager->GetCurrentContentTab()->GetLoadedResource();
+    foreach(ContentTab* tab, m_TabManager->GetContentTabs()) {
+	Resource* res = tab->GetLoadedResource();
+	if (res != current_resource) {
+	    open_tab_bookpaths << res->GetRelativePath();
+	    open_tab_positions << tab->GetCursorPosition();
+	}
+    }
+    open_tab_bookpaths << current_resource->GetRelativePath();
+    open_tab_positions << m_TabManager->GetCurrentContentTab()->GetCursorPosition();
+    
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
     QFuture<QString> afuture = QtConcurrent::run(&pr, &PythonRoutines::GenerateEpubFromTagInPython, 
@@ -711,20 +723,19 @@ void MainWindow::RepoCheckout(QString bookid, QString destdir, QString filename,
     ShowMessageOnStatusBar(tr("Epub Generation succeeded"));
 
     if (loadnow) {
-#ifdef Q_OS_MAC
-	MainWindow *new_window = new MainWindow(epub_result, "", true);
-	new_window->show();
-	new_window->activateWindow();
-#else
-	// For Linux and Windows will replace current book                                                      
-	// So Throw Up a Dialog to See if they want to proceed                                                  
+	// on macOS bad things with checkpoints could happen if we have 
+        // two different epubs open but both with the exact same book id
+	// so treat macOS just like Linux and Windows when restoring from 
+	// a checkpoint
+
+	// For Linux and Windows (and macOS in this one case) will replace 
+	// current book So Throw Up a Dialog to See if they want to proceed
 	bool proceed = false;
 	QMessageBox msgBox;
 	msgBox.setIcon(QMessageBox::Warning);
 	msgBox.setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
 	msgBox.setWindowTitle(tr("Repository Checkout"));
-	msgBox.setText(tr("Your current book will be completely replaced losing any unsaved changes ...  Are yo\
-u sure you want to proceed"));
+	msgBox.setText(tr("Your current book will be replaced losing any unsaved changes ... Are you sure you want to proceed?"));
 	QPushButton *yesButton = msgBox.addButton(QMessageBox::Yes);
 	QPushButton *noButton =  msgBox.addButton(QMessageBox::No);
 	msgBox.setDefaultButton(noButton);
@@ -734,8 +745,11 @@ u sure you want to proceed"));
 	}
 	if (proceed) {
 	    LoadFile(epub_result, true);
+	    // restore what we can of the open tabs
+	    for(int i=0; i < open_tab_bookpaths.length(); i++) {
+		OpenFile(open_tab_bookpaths.at(i), -1, open_tab_positions.at(i));
+	    }
 	}
-#endif
     }
 }
 
@@ -764,10 +778,10 @@ void MainWindow::RepoDiff(QString bookid)
     // Get tags using python in a separate thread since this
     // may take a while depending on the speed of the filesystem
     PythonRoutines pr;
-    QFuture<QStringList> future = QtConcurrent::run(&pr, &PythonRoutines::GetRepoTagsInPython, localRepo, bookid);
+    QFuture<QStringList> future = QtConcurrent::run(&pr, &PythonRoutines::GetRepoTagsInPython, 
+						          localRepo, bookid);
     future.waitForFinished();
     QStringList tag_results = future.result();
-    qDebug() << "in RepoDiff getting tag list  with result: " << tag_results;
     if (tag_results.isEmpty()) {
         ShowMessageOnStatusBar(tr("Diff Failed. No checkpoints found"));
         QApplication::restoreOverrideCursor();
@@ -775,8 +789,7 @@ void MainWindow::RepoDiff(QString bookid)
     }
     QApplication::restoreOverrideCursor();
 
-    // Reuse SelectCheckpoint for the time being
-    // Now create a Dialog to allow the user to select the base tag
+    // Now use a Dialog to allow the user to select the base tag
     QString chkpoint1;
     SelectCheckpoint gettagleft(tag_results, this);
     if (gettagleft.exec() == QDialog::Accepted) {
@@ -790,7 +803,7 @@ void MainWindow::RepoDiff(QString bookid)
         return;
     }
 
-    // now checkout this tag version and copy it to a tempfolder
+    // checkout this tag version and copy it to a tempfolder
     TempFolder destdir;
     QApplication::setOverrideCursor(Qt::WaitCursor);
     QFuture<QString> cfuture = QtConcurrent::run(&pr, &PythonRoutines::CopyTagToDestDirInPython, 
@@ -799,74 +812,26 @@ void MainWindow::RepoDiff(QString bookid)
     QString copied = cfuture.result();
     QApplication::restoreOverrideCursor();
 
-    // now test getting the status of the changes since that tag
+    // get  the status of the changes since that tag
     QString bookroot = m_Book->GetFolderKeeper()->GetFullPathToMainFolder();
     QStringList bookfiles = m_Book->GetFolderKeeper()->GetAllBookPaths();
     bookfiles << "META-INF/container.xml";
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    QFuture<QList<QStringList> > dfuture = QtConcurrent::run(
-				    &pr, &PythonRoutines::GetCurrentStatusVsDestDirInPython, 
-				    bookroot, bookfiles, destdir.GetPath());
+    QFuture<QList<QStringList> > dfuture = QtConcurrent::run(&pr, 
+					     &PythonRoutines::GetCurrentStatusVsDestDirInPython, 
+				             bookroot, bookfiles, destdir.GetPath());
     dfuture.waitForFinished();
     QList<QStringList> sres = dfuture.result();
     QApplication::restoreOverrideCursor();
-
+    // order is deleted, added, and modified
     QStringList dlist(sres.at(0));
     QStringList alist(sres.at(1));
     QStringList mlist(sres.at(2));
 
-    // show CPCompare dialog to allow the user to explore the changes
+    // use CPCompare dialog modally to allow the user to explore the changes
     CPCompare comp(bookroot, destdir.GetPath(), dlist, alist, mlist, this);
     comp.exec();
-
-#if 0
-    // Now create a Dialog to allow the user to select right diff tree
-    QString chkpoint2;
-    SelectCheckpoint gettagright(tag_results, this);
-    if (gettagright.exec() == QDialog::Accepted) {
-        QStringList taglst  = gettagright.GetSelectedEntries();
-        if (!taglst.isEmpty()) {
-            chkpoint2 = taglst.at(0);
-        }
-    }
-    if (chkpoint2.isEmpty()) {
-        ShowMessageOnStatusBar(tr("Diff Failed. No right checkpoint selectedfor comparison"));
-        return;
-    }
-
-    // TODO: implement a way to use current bookfiles as right diff tree
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    QFuture<QString> afuture = QtConcurrent::run(&pr, &PythonRoutines::GenerateDiffFromCheckPoints, 
-                         localRepo, bookid, chkpoint1, chkpoint2);
-    afuture.waitForFinished();
-    QString diff_result = afuture.result();
-    if (diff_result.isEmpty()) {
-        ShowMessageOnStatusBar(tr("Diff failed"));
-        QApplication::restoreOverrideCursor();
-        return;
-    }
-    // Dulwich unified diff for now. May eventually build diffs from "live" trees in C++.
-    QApplication::restoreOverrideCursor();
-    ShowMessageOnStatusBar(tr("Diff successful"));
-    RepoLog rl(diff_result, "fill in title here", this);
-    rl.exec();
-    qDebug() << diff_result;
-
-    // for testing purposes try to play around with the ChgViewer here
-    // with hard coded file paths
-    QString path1 = "/Users/kbhend/Desktop/project/features.html";
-    QString path2 = "/Users/kbhend/Desktop/project/features2.html";
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    QFuture<QList<DiffRecord::DiffRec>> bfuture = QtConcurrent::run(&pr, &PythonRoutines::GenerateParsedNDiffInPython, 
-							       path1, path2);
-    bfuture.waitForFinished();
-    QList<DiffRecord::DiffRec> diffinfo = bfuture.result();
-    QApplication::restoreOverrideCursor();
-    ChgViewer cv(diffinfo, path1, path2, this);
-    cv.exec();
-
-#endif
 }
 
 void MainWindow::RepoManage()
@@ -2338,19 +2303,20 @@ void MainWindow::ReportsDialog()
 }
 
 // This routine accepts a file_path that is a book path
-void MainWindow::OpenFile(QString bookpath, int line)
+void MainWindow::OpenFile(QString bookpath, int line, int position)
 {
     if (bookpath.isEmpty()) {
         return;
     }
-
-    if (line < 1) {
-        line = 1;
+    // if position exists use it as is is more precise
+    // otherwise use line
+    if (position < 0) {
+        if (line < 1) line = 1;
     }
 
     try {
         Resource *resource = m_Book->GetFolderKeeper()->GetResourceByBookPath(bookpath);
-        OpenResource(resource, line);
+        OpenResource(resource, line, position);
     } catch (ResourceDoesNotExist) {
         //
     }
@@ -4662,7 +4628,7 @@ bool MainWindow::LoadFile(const QString &fullfilepath, bool is_internal)
                 m_LastInsertedFile = "";
                 UpdateUiWithCurrentFile(fullfilepath);
             } else {
-                UpdateUiWithCurrentFile("");
+                UpdateUiWithCurrentFile(QFileInfo(fullfilepath).fileName(), true);
                 m_Book->SetModified();
             }
 
@@ -4942,10 +4908,15 @@ const QMap<QString, QString> MainWindow::GetSaveFiltersMap()
 }
 
 
-void MainWindow::UpdateUiWithCurrentFile(const QString &fullfilepath)
+void MainWindow::UpdateUiWithCurrentFile(const QString &fullfilepath, bool just_name)
 {
-    m_CurrentFilePath = fullfilepath;
-    m_CurrentFileName = m_CurrentFilePath.isEmpty() ? DEFAULT_FILENAME : QFileInfo(m_CurrentFilePath).fileName();
+    if (just_name) {
+        m_CurrentFilePath = "";
+        m_CurrentFileName = fullfilepath;
+    } else {
+        m_CurrentFilePath = fullfilepath;
+        m_CurrentFileName = m_CurrentFilePath.isEmpty() ? DEFAULT_FILENAME : QFileInfo(m_CurrentFilePath).fileName();
+    }
     QString epubversion = m_Book->GetConstOPF()->GetEpubVersion();
 
     // Update the titlebar
@@ -5397,6 +5368,11 @@ void MainWindow::ExtendUI()
     sm->registerAction(this, ui.actionCloseOtherTabs, "MainWindow.CloseOtherTabs");
     sm->registerAction(this, ui.actionPreviousResource, "MainWindow.PreviousResource");
     sm->registerAction(this, ui.actionNextResource, "MainWindow.NextResource");
+    // Checkpoints
+    sm->registerAction(this, ui.actionCommit,     "MainWindow.CreateCheckpoint");
+    sm->registerAction(this, ui.actionCheckout,   "MainWindow.RestoreFromCheckpoint");
+    sm->registerAction(this, ui.actionDiff,       "MainWindow.CompareToCheckpoint");
+    sm->registerAction(this, ui.actionManageRepo, "MainWindow.ManageCheckpointRepository");
     // Help
     sm->registerAction(this, ui.actionUserGuide, "MainWindow.UserGuide");
     sm->registerAction(this, ui.actionFAQ, "MainWindow.FAQ");
