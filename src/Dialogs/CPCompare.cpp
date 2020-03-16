@@ -31,10 +31,14 @@
 #include <QtConcurrent>
 #include <QFuture>
 #include <QFileInfo>
+#include <QMessageBox>
 #include <QDebug>
 
 #include "Dialogs/ListSelector.h"
 #include "Dialogs/SourceViewer.h"
+#include "Dialogs/ViewImage.h"
+#include "Dialogs/ViewAV.h"
+#include "Dialogs/ViewFont.h"
 #include "Dialogs/ChgViewer.h"
 #include "Misc/SettingsStore.h"
 #include "Misc/Utility.h"
@@ -49,6 +53,19 @@ static const QStringList TEXT_EXTENSIONS = QStringList() << "css" << "htm" << "h
                                                             "js" << "ncx" << "opf" << "pls" << "smil" <<
                                                             "svg" << "ttml" << "txt" << "vtt" << "xhtml" <<
                                                             "xml" << "xpgt";
+
+static const QStringList IMAGE_EXTENSIONS = QStringList() << "bm" << "bmp" << "gif" << "jpeg" << "jpg" <<
+							     "png" << "tif" << "tiff" << "webp";
+
+
+static const QStringList AUDIO_EXTENSIONS = QStringList() << "aac"   << "m4a"  << "mp3" << "mpeg" << 
+                                                             "mpg" << "oga" << "ogg";
+
+static const QStringList VIDEO_EXTENSIONS = QStringList() << "m4v"   << "mp4"  << "mov" << "ogv"  << 
+                                                             "webm";
+
+static const QStringList FONT_EXTENSIONS = QStringList() << "ttf"   << "ttc"  << "otf" << "woff" << "woff2";
+
 CPCompare::CPCompare(const QString& bookroot,
 		     const QString& cpdir,
 		     const QStringList& dlist,
@@ -87,11 +104,27 @@ void CPCompare::handle_del_request()
     foreach(QString apath, pathlist) {
 	QString filepath = m_cpdir + "/" + apath;
 	QFileInfo fi(filepath);
-	if (TEXT_EXTENSIONS.contains(fi.suffix().toLower())) {
+	QString ext = fi.suffix().toLower();
+	if (TEXT_EXTENSIONS.contains(ext)) {
 	    QString data = Utility::ReadUnicodeTextFile(filepath);
 	    SourceViewer* sv = new SourceViewer(apath, data, this);
 	    sv->show();
 	    sv->raise();
+	} else if (IMAGE_EXTENSIONS.contains(ext)) {
+	    ViewImage * vi = new ViewImage(this);
+	    vi->ShowImage(filepath);
+	    vi->show();
+	    vi->raise();
+	} else if (AUDIO_EXTENSIONS.contains(ext) || VIDEO_EXTENSIONS.contains(ext)) {
+	    ViewAV * av = new ViewAV(this);
+	    av->ShowAV(filepath);
+	    av->show();
+	    av->raise();
+	} else if (FONT_EXTENSIONS.contains(ext)) {
+	    ViewFont * vf = new ViewFont(this);
+	    vf->ShowFont(filepath);
+	    vf->show();
+	    vf->raise();
 	} else {
 	    qDebug() << "attempted to show a binary file " << apath;
 	}
@@ -105,11 +138,27 @@ void CPCompare::handle_add_request()
     foreach(QString apath, pathlist) {
         QString filepath = m_bookroot + "/" + apath;
 	QFileInfo fi(filepath);
-	if (TEXT_EXTENSIONS.contains(fi.suffix().toLower())) {
+	QString ext = fi.suffix().toLower();
+	if (TEXT_EXTENSIONS.contains(ext)) {
 	    QString data = Utility::ReadUnicodeTextFile(filepath);
 	    SourceViewer* sv = new SourceViewer(apath, data, this);
 	    sv->show();
 	    sv->raise();
+	} else if (IMAGE_EXTENSIONS.contains(ext)) {
+	    ViewImage * vi = new ViewImage(this);
+	    vi->ShowImage(filepath);
+	    vi->show();
+	    vi->raise();
+	} else if (AUDIO_EXTENSIONS.contains(ext) || VIDEO_EXTENSIONS.contains(ext)) {
+	    ViewAV * av = new ViewAV(this);
+	    av->ShowAV(filepath);
+	    av->show();
+	    av->raise();
+	} else if (FONT_EXTENSIONS.contains(ext)) {
+	    ViewFont * vf = new ViewFont(this);
+	    vf->ShowFont(filepath);
+	    vf->show();
+	    vf->raise();
 	} else {
 	    qDebug() << "attempted to show a binary file " << apath;
 	}
@@ -124,11 +173,12 @@ void CPCompare::handle_mod_request()
 	QString leftpath = m_cpdir + "/" + apath;
 	QString rightpath = m_bookroot + "/" + apath;
 	QFileInfo fi(rightpath);
-	if (TEXT_EXTENSIONS.contains(fi.suffix().toLower())) {
+	QFileInfo lfi(leftpath);
+	QString ext = fi.suffix().toLower();
+	if (TEXT_EXTENSIONS.contains(ext)) {
 	    QApplication::setOverrideCursor(Qt::WaitCursor);
-	    QFuture<QList<DiffRecord::DiffRec>> bfuture = QtConcurrent::run(&pr, 
-									&PythonRoutines::GenerateParsedNDiffInPython,
-									leftpath, rightpath);
+	    QFuture<QList<DiffRecord::DiffRec>> bfuture =
+		QtConcurrent::run(&pr, &PythonRoutines::GenerateParsedNDiffInPython, leftpath, rightpath);
 	    bfuture.waitForFinished();
 	    QList<DiffRecord::DiffRec> diffinfo = bfuture.result();
 	    QApplication::restoreOverrideCursor();
@@ -136,7 +186,16 @@ void CPCompare::handle_mod_request()
 	    cv->show();
 	    cv->raise();
 	} else {
-	    qDebug() << "attempted to show a binary file " << apath;
+	    QMessageBox * msgbox = new QMessageBox(this);
+	    msgbox->setIcon(QMessageBox::Information);
+	    msgbox->setWindowTitle(tr("Results of Comparison"));
+	    msgbox->setStandardButtons(QMessageBox::Ok);
+	    QString amsg = tr("These binary files differ in content:") + "\n";
+	    amsg += tr("Checkpoint:") + " " + apath + " " + QString::number(lfi.size()) + tr("bytes") + "\n";
+	    amsg += tr("Current:") + " " + apath + " " + QString::number(fi.size()) + tr("bytes") + "\n";
+	    msgbox->setText(amsg);
+	    msgbox->show();
+	    msgbox->raise();
 	}
     }
 }

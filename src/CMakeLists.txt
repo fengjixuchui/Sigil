@@ -232,6 +232,10 @@ set( DIALOG_FILES
     Dialogs/SpellcheckEditor.h
     Dialogs/ViewImage.cpp
     Dialogs/ViewImage.h
+    Dialogs/ViewAV.cpp
+    Dialogs/ViewAV.h
+    Dialogs/ViewFont.cpp
+    Dialogs/ViewFont.h
     Dialogs/Inspector.cpp
     Dialogs/Inspector.h
     )
@@ -508,7 +512,6 @@ set( UI_FILES
     Form_Files/IndexEditor.ui
     Form_Files/SpellcheckEditor.ui
     Form_Files/PluginRunner.ui
-    Form_Files/ViewImage.ui
     )
 
 set( SOURCEUPDATE_FILES

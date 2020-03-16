@@ -1,7 +1,6 @@
 /************************************************************************
 **
-**  Copyright (C) 2019 Kevin B. Hendricks, Stratford, Ontario Canada
-**  Copyright (C) 2013 Dave Heiland
+**  Copyright (C) 2020 Kevin B. Hendricks, Stratford, Ontario Canada
 **
 **  This file is part of Sigil.
 **
@@ -21,36 +20,36 @@
 *************************************************************************/
 
 #pragma once
-#ifndef VIEWIMAGE_H
-#define VIEWIMAGE_H
+#ifndef VIEWAV_H
+#define VIEWAV_H
 
-#include <QDialog>
 #include <QSize>
-#include "Misc/SettingsStore.h"
-#include "ResourceObjects/Resource.h"
+#include <QString>
+#include <QWidget>
+#include <QDialog>
 
 class QVBoxLayout;
 class QWebEngineView;
 class QToolButton;
 
-class ViewImage : public QDialog
+class ViewAV : public QDialog
 {
     Q_OBJECT
 
-public:
-    ViewImage(QWidget *parent = 0);
-    ~ViewImage();
+ public:
+    ViewAV(QWidget *parent=0);
+    ~ViewAV();
 
+    void ShowAV(QString path);
     QSize sizeHint();
-    void ShowImage(QString path);
 
-public slots:
+ public slots:
     void ReloadViewer();
 
-private slots:
+ private slots:
     void WriteSettings();
 
-private:
+ private:
     void ReadSettings();
     void ConnectSignalsToSlots();
 
@@ -60,4 +59,4 @@ private:
     QVBoxLayout* m_layout;
 };
 
-#endif // VIEWIMAGE_H
+#endif // VIEWAV_H
