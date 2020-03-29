@@ -605,7 +605,12 @@ void MainWindow::RepoCommit()
     QStringList bookinfo;
     bookinfo << QFileInfo(m_CurrentFileName).completeBaseName();
     bookinfo << m_Book->GetOPF()->GetPrimaryBookTitle();
+
+    // follow epub3 spec and update modification date/time for every save and commit
+    // manually set the book to be modified since modification date setting is normally
+    // only done upon save or save-as so no need to set the modified flag
     bookinfo <<  m_Book->GetOPF()->AddModificationDateMeta();
+    m_Book->SetModified();
 
     // finally force all changes to Disk
     SaveTabData();
@@ -4418,8 +4423,8 @@ bool MainWindow::ProceedToOverwrite(const QString& msg, const QString &filename)
     QMessageBox::StandardButton button_pressed;
     button_pressed = QMessageBox::warning(this,
 					  tr("Sigil"),
-				          msg + " " +  
-				          tr("Should Sigil overwrite this file?") + " " + filename,
+				          msg + "\n" + filename + "\n\n" +
+				          tr("Should Sigil overwrite this file?"),
 					  QMessageBox::Yes | QMessageBox::No);
     if (button_pressed == QMessageBox::Yes) return true;
     return false;
