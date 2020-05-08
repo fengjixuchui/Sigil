@@ -41,6 +41,9 @@
 #include <QtWebEngineWidgets/QWebEngineSettings>
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
+#ifdef Q_OS_WIN32
+#include <QtWinExtras>
+#endif
 #include <QString>
 #include <QStringList>
 #include <QFont>
@@ -217,6 +220,7 @@ MainWindow::MainWindow(const QString &openfilepath,
     m_SaveCSS(false),
     m_IsClosing(false)
 {
+    createJumpList();
     ui.setupUi(this);
     // Telling Qt to delete this window
     // from memory when it is closed
@@ -294,6 +298,14 @@ void MainWindow::maybe_fixup_dockwidget_geometry(QDockWidget* dw)
     }
 }
 #endif
+
+void MainWindow::createJumpList()
+{
+#ifdef Q_OS_WIN32
+    QWinJumpList jumplist;
+    jumplist.recent()->setVisible(true);
+#endif
+}
 
 // Note on Mac OS X you may only add a QMenu or SubMenu to the MenuBar Once!
 // Actions can be removed
@@ -6203,7 +6215,9 @@ void MainWindow::MakeTabConnections(ContentTab *tab)
         connect(tab,   SIGNAL(ScrollPreviewImmediately()), this, SLOT(ScrollPreview()));
     }
 
-    if (rType != Resource::AudioResourceType && rType != Resource::VideoResourceType) {
+    if (rType != Resource::AudioResourceType && 
+        rType != Resource::VideoResourceType &&
+        rType != Resource::FontResourceType) {
         connect(ui.actionPrintPreview,             SIGNAL(triggered()),  tab,   SLOT(PrintPreview()));
         connect(ui.actionPrint,                    SIGNAL(triggered()),  tab,   SLOT(Print()));
         connect(tab,   SIGNAL(ContentChanged()),             m_Book.data(), SLOT(SetModified()));
