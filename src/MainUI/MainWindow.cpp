@@ -4289,7 +4289,7 @@ void MainWindow::ReadSettings()
     web_settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
     web_settings->setAttribute(QWebEngineSettings::JavascriptCanAccessClipboard, false);
     web_settings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, (settings.remoteOn() == 1));
-    web_settings->setAttribute(QWebEngineSettings::LocalContentCanAccessFileUrls, false);
+    web_settings->setAttribute(QWebEngineSettings::LocalContentCanAccessFileUrls, true);
     web_settings->setAttribute(QWebEngineSettings::PluginsEnabled, false);
     web_settings->setAttribute(QWebEngineSettings::AutoLoadIconsForPage, false);
     web_settings->setAttribute(QWebEngineSettings::FocusOnNavigationEnabled, true);
@@ -4333,24 +4333,26 @@ void MainWindow::ReadSettings()
     // On Mac OS X QCoreApplication::applicationDirPath() points to Sigil.app/Contents/MacOS/ 
     QDir execdir(QCoreApplication::applicationDirPath());
     execdir.cdUp();
-    mathjaxurl = execdir.absolutePath() + "/polyfills/MJ/MathJax.js";
+    mathjaxurl = execdir.absolutePath() + "/polyfills/MJ/";
 #elif defined(Q_OS_WIN32)
-    mathjaxurl = "/" + QCoreApplication::applicationDirPath() + "/polyfills/MJ/MathJax.js";
+    mathjaxurl = "/" + QCoreApplication::applicationDirPath() + "/polyfills/MJ/";
 #else
     // all flavours of linux / unix
     // First check if system MathJax was configured to be used at compile time
     if (!mathjax_dir.isEmpty()) {
-        mathjaxurl = mathjax_dir + "/MathJax.js";
+        mathjaxurl = mathjax_dir;
     } else {
         // otherwise user supplied environment variable to 'share/sigil'
         // takes precedence over Sigil's usual share location.
         if (!sigil_extra_root.isEmpty()) {
-	    mathjaxurl = sigil_extra_root + "/polyfills/MJ/MathJax.js";
+	    mathjaxurl = sigil_extra_root + "/polyfills/MJ/";
         } else {
-	    mathjaxurl = sigil_share_root + "/polyfills/MJ/MathJax.js";
+	    mathjaxurl = sigil_share_root + "/polyfills/MJ/";
         }
     }
 #endif
+    m_mathjaxfolder = mathjaxurl;
+    mathjaxurl = mathjaxurl + "MathJax.js";
     mathjaxurl = "file://" + Utility::URLEncodePath(mathjaxurl);
     mathjaxurl = mathjaxurl + "?config=local/SIGIL_EBOOK_MML_SVG";
     m_PreviewWindow->setMathJaxURL(mathjaxurl);
