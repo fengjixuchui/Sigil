@@ -123,7 +123,7 @@ void TableOfContents::ItemClickedHandler(const QModelIndex &index)
     try {
         Resource *resource = m_Book->GetFolderKeeper()->GetResourceByBookPath(dest_bkpath);
         emit OpenResourceRequest(resource, line, -1, QString(), fragment);
-    } catch (ResourceDoesNotExist) {
+    } catch (ResourceDoesNotExist&) {
         Utility::DisplayStdErrorDialog(
             tr("The file \"%1\" does not exist.")
             .arg(dest_bkpath)
@@ -140,7 +140,7 @@ void TableOfContents::SetupTreeView()
 {
     m_TreeView->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_TreeView->setSortingEnabled(false);
-    m_TreeView->sortByColumn(-1);
+    m_TreeView->sortByColumn(-1, Qt::AscendingOrder);
     m_TreeView->setUniformRowHeights(true);
     m_TreeView->setDragEnabled(false);
     m_TreeView->setAcceptDrops(false);
