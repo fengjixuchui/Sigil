@@ -216,7 +216,7 @@ bool PreviewWindow::UpdatePage(QString filename_url, QString text, QList<Element
         DBG qDebug() << "ignoring PV UpdatePage since PV is not visible";
         return true;
     }
-   
+
     if (m_updatingPage) {
         DBG qDebug() << "delaying PV UpdatePage request as currently loading a page: ";
 	return false;

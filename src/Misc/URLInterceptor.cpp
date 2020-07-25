@@ -21,10 +21,11 @@
 
 #include <QString>
 #include <QUrl>
+#include <QApplication>
+#include <QWidgetList>
 #include <QDebug>
 
 #include "BookManipulation/Book.h"
-#include "Misc/Utility.h"
 #include "MainUI/MainWindow.h"
 #include "BookManipulation/FolderKeeper.h"
 #include "URLInterceptor.h"
@@ -47,11 +48,12 @@ void URLInterceptor::interceptRequest(QWebEngineUrlRequestInfo &info)
     qDebug() << "request" << info.requestUrl();
     qDebug() << "navtype: " << info.navigationType();
     qDebug() << "restype: " << info.resourceType();
+    qDebug() << "ActiveWindow: " <<  qApp->activeWindow();
 #endif
 
     if (info.requestMethod() != "GET") {
         info.block(true);
-	qDebug() << "Warning: URLInterceptor Blocking POST request from " << info.firstPartyUrl();
+        qDebug() << "Warning: URLInterceptor Blocking POST request from " << info.firstPartyUrl();
         return;
     }
     
@@ -59,47 +61,59 @@ void URLInterceptor::interceptRequest(QWebEngineUrlRequestInfo &info)
 
     // verify all url file schemes before allowing
     if (destination.scheme() == "file") {
-        QString bookfolder;
+        // find the relavent MainWindow
+	QString bookfolder;
         QString mathjaxfolder;
-        QString usercssfolder;
-        MainWindow * mainwin = qobject_cast<MainWindow*>(Utility::GetMainWindow());
-        if (mainwin) {
-            QSharedPointer<Book> book = mainwin->GetCurrentBook();
-            bookfolder = book->GetFolderKeeper()->GetFullPathToMainFolder() + "/";
-            mathjaxfolder = mainwin->GetMathJaxFolder();
-            usercssfolder = Utility::DefinePrefsDir() + "/";
+        QString usercssfolder = Utility::DefinePrefsDir() + "/";
+	QString sourcefolder = info.firstPartyUrl().toLocalFile();
+	const QWidgetList topwidgets = qApp->topLevelWidgets();
+	foreach(QWidget* widget, topwidgets) {
+	    MainWindow * mw = qobject_cast<MainWindow *>(widget);
+	    if (mw) {
+		QSharedPointer<Book> book = mw->GetCurrentBook();
+		QString path_to_book = book->GetFolderKeeper()->GetFullPathToMainFolder() + "/";
+		QString path_to_mathjax = mw->GetMathJaxFolder();
+		if (sourcefolder.startsWith(path_to_book)) {
+		    bookfolder = path_to_book;
+		    mathjaxfolder = path_to_mathjax;
 #if INTERCEPTDEBUG
-	    qDebug() << "book: " << bookfolder;
-	    qDebug() << "mathjax: " << mathjaxfolder;
-	    qDebug() << "usercss: " << usercssfolder;
+                    qDebug() << "mainwin: " <<  mw;
+                    qDebug() << "book: " << bookfolder;
+                    qDebug() << "mathjax: " << mathjaxfolder;
+                    qDebug() << "usercss: " << usercssfolder;
+		    qDebug() << "party: " << info.firstPartyUrl();
+		    qDebug() << "source: " << sourcefolder;
 #endif
-        }
-	// if can not determine book folder block it
+		    break;
+		}
+	    }
+	}
+        // if can not determine book folder block it
         if (bookfolder.isEmpty()) {
             info.block(true);
-	    qDebug() << "Error: URLInterceptor can not determine book folder so all file: requests blocked";
+            qDebug() << "Error: URLInterceptor can not determine book folder so all file: requests blocked";
             return;
         }
-	// path must be inside of bookfolder, Nore it is legal for it not to exist
+        // path must be inside of bookfolder, Note it is legal for it not to exist
         QString destpath = destination.toLocalFile();
         if (destpath.startsWith(bookfolder)) {
             info.block(false);
             return;
         }
-	// or path must be inside the Sigil user's preferences directory
+        // or path must be inside the Sigil user's preferences directory
         if (destpath.startsWith(usercssfolder)) {
             info.block(false);
             return;
         }
-	// or the path must be inside the Sigil's MathJax folder 
+        // or the path must be inside the Sigil's MathJax folder 
         if (destpath.startsWith(mathjaxfolder)) {
             info.block(false);
             return;
         }
-	// otherwise block it to prevent access to any user file path
+        // otherwise block it to prevent access to any user file path
         info.block(true);
-	qDebug() << "Warning: URLInterceptor blocking access to url " << destination;
-	qDebug() << "    from " << info.firstPartyUrl();
+        qDebug() << "Warning: URLInterceptor blocking access to url " << destination;
+        qDebug() << "    from " << info.firstPartyUrl();
         return;
     }
 
