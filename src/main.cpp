@@ -35,11 +35,16 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QMessageBox>
 #include <QXmlStreamReader>
+#include <QResource>
 #include <QFile>
 #include <QFileInfo>
 #include <QTextStream>
 #include <QFontMetrics>
 #include <QtWebEngineWidgets/QWebEngineProfile>
+
+#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+#include <QWebEngineUrlScheme>
+#endif
 
 #include "Misc/PluginDB.h"
 #include "Misc/UILanguage.h"
@@ -52,6 +57,7 @@
 #include "Misc/UpdateChecker.h"
 #include "Misc/Utility.h"
 #include "Misc/URLInterceptor.h"
+#include "Misc/URLSchemeHandler.h"
 #include "sigil_constants.h"
 #include "sigil_exception.h"
 
@@ -146,11 +152,12 @@ static QIcon GetApplicationIcon()
     QIcon app_icon;
     // This 16x16 one looks wrong for some reason
     //app_icon.addFile( ":/icon/app_icon_16.png", QSize( 16, 16 ) );
-    app_icon.addFile(":/icon/app_icon_32.png",  QSize(32, 32));
-    app_icon.addFile(":/icon/app_icon_48.png",  QSize(48, 48));
-    app_icon.addFile(":/icon/app_icon_128.png", QSize(128, 128));
-    app_icon.addFile(":/icon/app_icon_256.png", QSize(256, 256));
-    app_icon.addFile(":/icon/app_icon_512.png", QSize(512, 512));
+    app_icon.addFile(":/app_icons/app_icon_32.png",  QSize(32, 32));
+    app_icon.addFile(":/app_icons/app_icon_48.png",  QSize(48, 48));
+    app_icon.addFile(":/app_icons/app_icon_64.png",  QSize(64, 64));
+    app_icon.addFile(":/app_icons/app_icon_128.png", QSize(128, 128));
+    app_icon.addFile(":/app_icons/app_icon_256.png", QSize(256, 256));
+    app_icon.addFile(":/app_icons/app_icon_512.png", QSize(512, 512));
     return app_icon;
 }
 #endif
@@ -306,6 +313,7 @@ int main(int argc, char *argv[])
 }
 #endif
 
+
 #ifndef QT_DEBUG
     qInstallMessageHandler(MessageHandler);
 #endif
@@ -316,10 +324,22 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName("sigil");
     QCoreApplication::setApplicationVersion(SIGIL_VERSION);
 
+#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+    // register the our own url scheme (this is required since Qt 5.12)
+    QWebEngineUrlScheme sigilScheme("sigil");
+    sigilScheme.setFlags(QWebEngineUrlScheme::SecureScheme |
+                         QWebEngineUrlScheme::LocalScheme |
+                         QWebEngineUrlScheme::LocalAccessAllowed |
+                         QWebEngineUrlScheme::ContentSecurityPolicyIgnored);
+    // sigilScheme.setSyntax(QWebEngineUrlScheme::Syntax::Host);
+    sigilScheme.setSyntax(QWebEngineUrlScheme::Syntax::Path);
+    QWebEngineUrlScheme::registerScheme(sigilScheme);
+#endif
+
 #ifndef Q_OS_MAC
     setupHighDPI();
-    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 #endif
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 
     // many qtbugs related to mixing 32 and 64 bit qt apps when shader disk cache is used
     // Only use if using Qt5.9.0 or higher
@@ -409,7 +429,11 @@ int main(int argc, char *argv[])
         if (!force_sigil_darkmode_palette.isEmpty()) {
             // Apply custom dark style
             app.setStyle(new SigilDarkStyle);
+#if QT_VERSION == QT_VERSION_CHECK(5, 15, 0)
+            // Qt keeps breaking my custom dark theme.
+            // This was apparently only necessary for Qt5.15.0!!
             app.setPalette(QApplication::style()->standardPalette());
+#endif
         }
 #else
         if (Utility::WindowsShouldUseDarkMode()) {
@@ -508,6 +532,10 @@ int main(int argc, char *argv[])
 #endif
 #endif
 
+        // Install our own URLSchemeHandler for QtWebEngine to bypass 2mb url limit
+        URLSchemeHandler handlescheme; 
+        QWebEngineProfile::defaultProfile()->installUrlSchemeHandler("sigil", &handlescheme);
+
         // Install our own URLInterceptor for QtWebEngine to protect
         // against bad file:: urls
         URLInterceptor* urlint = new URLInterceptor();
@@ -521,6 +549,40 @@ int main(int argc, char *argv[])
         // the reply has time to return.
         UpdateChecker *checker = new UpdateChecker(&app);
         checker->CheckForUpdate();
+
+        // select the icon theme to use
+        QString RCCResourcePath;
+#ifdef Q_OS_MAC
+        QDir exedir(QCoreApplication::applicationDirPath());
+        exedir.cdUp();
+        RCCResourcePath = exedir.absolutePath() + "/Resources";
+#elif defined(Q_OS_WIN32)
+        RCCResourcePath = QCoreApplication::applicationDirPath() + "/iconthemes";
+#else
+        // user supplied environment variable to 'share/sigil' directory overrides everything
+        if (!sigil_extra_root.isEmpty()) {
+            RCCResourcePath = sigil_extra_root + "/iconthemes";
+        } else {
+            RCCResourcePath = sigil_share_root + "/iconthemes";
+        }
+#endif
+	QString icon_theme = settings.uiIconTheme();
+        // First check if user wants the Custom Icon Theme
+	if (icon_theme == "custom") {
+	    // it must exist and be loadable
+	    QString CustomRCCPath = Utility::DefinePrefsDir() + "/" + CUSTOM_ICON_THEME_FILENAME;
+            bool loaded = false;
+	    if (QFileInfo(CustomRCCPath).exists()) {
+		loaded = QResource::registerResource(Utility::DefinePrefsDir() + "/" + CUSTOM_ICON_THEME_FILENAME);
+	    }
+	    if (!loaded) {
+		// revert to using main
+		icon_theme = "main";
+		settings.setUIIconTheme("main");
+	    }
+	}
+        // qDebug() << RCCResourcePath;
+        QResource::registerResource(RCCResourcePath + "/" + icon_theme + ".rcc");
 
         QStringList arguments = QCoreApplication::arguments();
 
@@ -566,9 +628,7 @@ int main(int argc, char *argv[])
             appquit_action->setMenuRole(QAction::QuitRole);
             appquit_action->setShortcut(QKeySequence("Ctrl+Q"));
             icon = appquit_action->icon();
-            icon.addFile(QString::fromUtf8(":/main/process-stop_16px.png"));
-            icon.addFile(QString::fromUtf8(":/main/process-stop_22px.png"));
-            icon.addFile(QString::fromUtf8(":/main/process-stop_48px.png"));
+            icon.addFile(QString::fromUtf8(":/main/process-stop.svg"));
             appquit_action->setIcon(icon);
             QObject::connect(appquit_action, &QAction::triggered, AppExit);
             app_menu->addAction(appquit_action);
@@ -577,9 +637,7 @@ int main(int argc, char *argv[])
             QAction* about_action = new QAction(QObject::tr("About"));
             about_action->setMenuRole(QAction::AboutRole);
             icon = about_action->icon();
-            icon.addFile(QString::fromUtf8(":/main/help-browser_16px.png"));
-            icon.addFile(QString::fromUtf8(":/main/help-browser_22px.png"));
-            icon.addFile(QString::fromUtf8(":/main/help-browser_48px.png"));
+            icon.addFile(QString::fromUtf8(":/main/help-browser.svg"));
             about_action->setIcon(icon);
             QObject::connect(about_action, &QAction::triggered, AboutDialog);
             app_menu->addAction(about_action);
@@ -599,9 +657,7 @@ int main(int argc, char *argv[])
             QAction * new_action = new QAction(QObject::tr("New"));
             new_action->setShortcut(QKeySequence("Ctrl+N"));
             icon = new_action->icon();
-            icon.addFile(QString::fromUtf8(":/main/document-new_16px.png"));
-            icon.addFile(QString::fromUtf8(":/main/document-new_22px.png"));
-            icon.addFile(QString::fromUtf8(":/main/document-new_48px.png"));
+            icon.addFile(QString::fromUtf8(":/main/document-new.svg"));
             new_action->setIcon(icon);
             QObject::connect(new_action, &QAction::triggered, file_new);
             file_menu->addAction(new_action);
@@ -610,9 +666,7 @@ int main(int argc, char *argv[])
             QAction* open_action = new QAction(QObject::tr("Open"));
             open_action->setShortcut(QKeySequence("Ctrl+O"));
             icon = open_action->icon();
-            icon.addFile(QString::fromUtf8(":/main/document-open_16px.png"));
-            icon.addFile(QString::fromUtf8(":/main/document-open_22px.png"));
-            icon.addFile(QString::fromUtf8(":/main/document-open_48px.png"));
+            icon.addFile(QString::fromUtf8(":/main/document-open.svg"));
             open_action->setIcon(icon);
             QObject::connect(open_action, &QAction::triggered, file_open);
             file_menu->addAction(open_action);

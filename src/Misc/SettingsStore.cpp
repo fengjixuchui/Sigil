@@ -39,6 +39,7 @@ static QString KEY_DEFAULT_METADATA_LANGUAGE = SETTINGS_GROUP + "/" + "default_m
 static QString KEY_UI_LANGUAGE = SETTINGS_GROUP + "/" + "ui_language";
 static QString KEY_UI_FONT = SETTINGS_GROUP + "/" + "ui_font";
 static QString KEY_ORIGINAL_UI_FONT = SETTINGS_GROUP + "/" + "original_ui_font";
+static QString KEY_UI_ICON_THEME = SETTINGS_GROUP + "/" + "ui_icon_theme";
 static QString KEY_DRAG_DISTANCE_TWEAK = SETTINGS_GROUP + "/" + "drag_distance_tweak";
 static QString KEY_ZOOM_IMAGE = SETTINGS_GROUP + "/" + "zoom_image";
 static QString KEY_ZOOM_TEXT = SETTINGS_GROUP + "/" + "zoom_text";
@@ -47,6 +48,7 @@ static QString KEY_ZOOM_PREVIEW = SETTINGS_GROUP + "/" + "zoom_preview";
 static QString KEY_ZOOM_INSPECTOR = SETTINGS_GROUP + "/" + "zoom_inspector";
 static QString KEY_RENAME_TEMPLATE = SETTINGS_GROUP + "/" + "rename_template";
 static QString KEY_DICTIONARY_NAME = SETTINGS_GROUP + "/" + "dictionary_name";
+static QString KEY_SECONDARY_DICTIONARY_NAME = SETTINGS_GROUP + "/" + "secondary_dictionary_name";
 static QString KEY_SPELL_CHECK = SETTINGS_GROUP + "/" + "spell_check";
 static QString KEY_SPELL_CHECK_NUMBERS = SETTINGS_GROUP + "/" + "spell_check_numbers";
 static QString KEY_DEFAULT_USER_DICTIONARY = SETTINGS_GROUP + "/" + "user_dictionary_name";
@@ -98,6 +100,8 @@ static QString KEY_CODE_VIEW_XHTML_DOCTYPE_COLOR = SETTINGS_GROUP + "/" + "code_
 static QString KEY_CODE_VIEW_XHTML_ENTITY_COLOR = SETTINGS_GROUP + "/" + "code_view_xhtml_entity_color";
 static QString KEY_CODE_VIEW_XHTML_HTML_COLOR = SETTINGS_GROUP + "/" + "code_view_xhtml_html_color";
 static QString KEY_CODE_VIEW_XHTML_HTML_COMMENT_COLOR = SETTINGS_GROUP + "/" + "code_view_xhtml_html_comment_color";
+
+static QString KEY_CODE_VIEW_HIGHLIGHT_OPEN_CLOSE_TAGS = SETTINGS_GROUP + "/" + "code_view_highlight_open_close_tags";
 
 // Dark Appearance
 static QString KEY_CV_DARK_CSS_COMMENT_COLOR = SETTINGS_GROUP + "/" + "cv_dark_css_comment_color";
@@ -158,6 +162,12 @@ QString SettingsStore::originalUIFont()
     return value(KEY_ORIGINAL_UI_FONT, "").toString();
 }
 
+QString SettingsStore::uiIconTheme()
+{
+    clearSettingsGroup();
+    return value(KEY_UI_ICON_THEME, "main").toString();
+}
+
 int SettingsStore::uiDragDistanceTweak()
 {
     clearSettingsGroup();
@@ -212,6 +222,12 @@ QString SettingsStore::dictionary()
     return value(KEY_DICTIONARY_NAME, "en_US").toString();
 }
 
+QString SettingsStore::secondary_dictionary()
+{
+    clearSettingsGroup();
+    return value(KEY_SECONDARY_DICTIONARY_NAME, "").toString();
+}
+
 QStringList SettingsStore::enabledUserDictionaries()
 {
     clearSettingsGroup();
@@ -221,7 +237,7 @@ QStringList SettingsStore::enabledUserDictionaries()
 bool SettingsStore::spellCheck()
 {
     clearSettingsGroup();
-    return static_cast<bool>(value(KEY_SPELL_CHECK, true).toBool());
+    return static_cast<bool>(value(KEY_SPELL_CHECK, false).toBool());
 }
 
 bool SettingsStore::spellCheckNumbers()
@@ -406,6 +422,12 @@ SettingsStore::CodeViewAppearance SettingsStore::codeViewAppearance()
     return appearance;
 }
 
+bool SettingsStore::highlightOpenCloseTags()
+{
+    clearSettingsGroup();
+    return static_cast<bool>(value(KEY_CODE_VIEW_HIGHLIGHT_OPEN_CLOSE_TAGS, true).toBool());
+}
+
 SettingsStore::CodeViewAppearance SettingsStore::codeViewDarkAppearance()
 {
     clearSettingsGroup();
@@ -480,6 +502,12 @@ void SettingsStore::setOriginalUIFont(const QString &font_data)
     setValue(KEY_ORIGINAL_UI_FONT, font_data);
 }
 
+void SettingsStore::setUIIconTheme(const QString &iconthemename)
+{
+    clearSettingsGroup();
+    setValue(KEY_UI_ICON_THEME, iconthemename);
+}
+
 void SettingsStore::setUiDragDistanceTweak(int tweak)
 {
     clearSettingsGroup();
@@ -526,6 +554,12 @@ void SettingsStore::setDictionary(const QString &name)
 {
     clearSettingsGroup();
     setValue(KEY_DICTIONARY_NAME, name);
+}
+
+void SettingsStore::setSecondaryDictionary(const QString &name)
+{
+    clearSettingsGroup();
+    setValue(KEY_SECONDARY_DICTIONARY_NAME, name);
 }
 
 void SettingsStore::setEnabledUserDictionaries(const QStringList names)
@@ -704,6 +738,12 @@ void SettingsStore::setCodeViewAppearance(const SettingsStore::CodeViewAppearanc
     setValue(KEY_CODE_VIEW_XHTML_HTML_COMMENT_COLOR, code_view_appearance.xhtml_html_comment_color);
 }
 
+void SettingsStore::setHighlightOpenCloseTags(bool enabled)
+{
+    clearSettingsGroup();
+    setValue(KEY_CODE_VIEW_HIGHLIGHT_OPEN_CLOSE_TAGS, enabled);
+}
+
 void SettingsStore::setCodeViewDarkAppearance(const SettingsStore::CodeViewAppearance &code_view_appearance)
 {
     clearSettingsGroup();
@@ -797,12 +837,14 @@ void SettingsStore::clearAppearanceSettings()
         remove(KEY_CV_DARK_XHTML_HTML_COMMENT_COLOR);
     }
 
+    remove(KEY_CODE_VIEW_HIGHLIGHT_OPEN_CLOSE_TAGS);
     remove(KEY_SPECIAL_CHARACTER_FONT_FAMILY);
     remove(KEY_SPECIAL_CHARACTER_FONT_SIZE);
     remove(KEY_MAIN_MENU_ICON_SIZE);
     remove(KEY_SHOWFULLPATH_ON);
     remove(KEY_HIGHDPI_SETTING);
     remove(KEY_UI_FONT);
+    remove(KEY_UI_ICON_THEME);
     remove(KEY_DRAG_DISTANCE_TWEAK);
     remove(KEY_PREVIEW_DARK_IN_DM);
     ;

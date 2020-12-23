@@ -85,11 +85,16 @@ PreferencesWidget::ResultActions SpellCheckWidget::saveSettings()
     settings.setEnabledUserDictionaries(EnabledDictionaries());
     settings.setDefaultUserDictionary(ui.defaultUserDictionary->text());
     settings.setDictionary(ui.dictionaries->itemData(ui.dictionaries->currentIndex()).toString());
+    settings.setSecondaryDictionary(ui.dictionaries->itemData(ui.dictionaries2d->currentIndex()).toString());
     settings.setSpellCheck(ui.HighlightMisspelled->checkState() == Qt::Checked);
     settings.setSpellCheckNumbers(ui.CheckNumbers->checkState() == Qt::Checked);
 
     SpellCheck *sc = SpellCheck::instance();
     sc->setDictionary(settings.dictionary(), true);
+    if (!settings.secondary_dictionary().isEmpty()) {
+        sc->setDictionary(settings.secondary_dictionary(), true);
+    }
+    sc->UpdateLangCodeToDictMapping();
 
     results = results | PreferencesWidget::ResultAction_RefreshSpelling;
     results = results & PreferencesWidget::ResultAction_Mask;
@@ -358,6 +363,7 @@ void SpellCheckWidget::readSettings()
     SpellCheck *sc = SpellCheck::instance();
     QStringList dicts = sc->dictionaries();
     ui.dictionaries->clear();
+    ui.dictionaries2d->clear();
     foreach(QString dict, dicts) {
         QString name;
         QString fix_dict = dict;
@@ -385,9 +391,12 @@ void SpellCheckWidget::readSettings()
 	}
 	if (name.isEmpty()) name = dict;
         ui.dictionaries->addItem(name, dict);
+        ui.dictionaries2d->addItem(name, dict);
     }
+    ui.dictionaries2d->addItem("", "");
+
     // Select the current dictionary.
-    QString currentDict = sc->currentDictionary();
+    QString currentDict = sc->currentPrimaryDictionary();
     SettingsStore settings;
 
     if (!currentDict.isEmpty()) {
@@ -396,6 +405,11 @@ void SpellCheckWidget::readSettings()
         if (index > -1) {
             ui.dictionaries->setCurrentIndex(index);
         }
+    }
+    currentDict = settings.secondary_dictionary();
+    int index = ui.dictionaries2d->findData(currentDict);
+    if (index > -1) {
+        ui.dictionaries2d->setCurrentIndex(index);
     }
 
     // Load the list of user dictionaries.
@@ -601,6 +615,7 @@ void SpellCheckWidget::connectSignalsToSlots()
     connect(ui.removeWord, SIGNAL(clicked()), this, SLOT(removeWord()));
     connect(ui.removeAll, SIGNAL(clicked()), this, SLOT(removeAll()));
     connect(ui.dictionaries, SIGNAL(currentIndexChanged(int)), this, SLOT(dictionariesCurrentIndexChanged(int)));
+    connect(ui.dictionaries2d, SIGNAL(currentIndexChanged(int)), this, SLOT(dictionariesCurrentIndexChanged(int)));
     connect(ui.HighlightMisspelled, SIGNAL(stateChanged(int)), this, SLOT(highlightChanged(int)));
     connect(ui.CheckNumbers, SIGNAL(stateChanged(int)), this, SLOT(checkNumbersChanged(int)));
 

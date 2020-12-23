@@ -68,6 +68,11 @@ endif()
 set( PKGS_TO_FIND Core Network WebEngine WebEngineWidgets Widgets Xml Concurrent PrintSupport LinguistTools )
 if ( WIN32 )
     list( APPEND PKGS_TO_FIND WinExtras )
+    if ( USE_ALT_ICONS )
+        set(APP_ICON_PATH "${CMAKE_SOURCE_DIR}/src/Resource_Files/icon/app_icons_alt/app.ico" )
+    else()
+        set(APP_ICON_PATH "${CMAKE_SOURCE_DIR}/src/Resource_Files/icon/app_icons_orig/app.ico" )
+    endif()
 endif()
 find_package( Qt5 ${QT5_NEEDED} COMPONENTS ${PKGS_TO_FIND} )
 
@@ -293,10 +298,14 @@ set( IMPORTER_FILES
 set( MISC_FILES
     Misc/AppEventFilter.cpp
     Misc/AppEventFilter.h
+    Misc/AsciiFy.cpp
+    Misc/AsciiFy.h
     Misc/UpdateChecker.cpp
     Misc/UpdateChecker.h
     Misc/URLInterceptor.cpp
     Misc/URLInterceptor.h
+    Misc/URLSchemeHandler.cpp
+    Misc/URLSchemeHandler.h
     Misc/Utility.cpp
     Misc/Utility.h
     Misc/SleepFunctions.h
@@ -315,6 +324,8 @@ set( MISC_FILES
     Misc/HTMLEncodingResolver.h
     Misc/HTMLSpellCheck.cpp
     Misc/HTMLSpellCheck.h
+    Misc/HTMLSpellCheckML.cpp
+    Misc/HTMLSpellCheckML.h
     Misc/PasteTargetComboBox.cpp
     Misc/PasteTargetComboBox.h
     Misc/PasteTarget.h
@@ -379,6 +390,10 @@ set( MISC_FILES
     Misc/MediaTypes.h
     Misc/TagAtts.cpp
     Misc/TagAtts.h
+    Misc/QuickParser.cpp
+    Misc/QuickParser.h
+    Misc/TagLister.cpp
+    Misc/TagLister.h
     )
 
 set( MISC_EDITORS_FILES
@@ -559,11 +574,27 @@ set( SOURCEUPDATE_FILES
     )
 
 set( QRC_FILES
-    Resource_Files/main/main.qrc
     Resource_Files/About/About.qrc
     Resource_Files/javascript/javascript.qrc
     Resource_Files/icon/icon.qrc
     Resource_Files/dark/dark.qrc
+    )
+if( UNIX AND NOT APPLE )
+    if ( USE_ALT_ICONS )
+        LIST( APPEND QRC_FILES Resource_Files/icon/app_icons_alt/app_icons.qrc )
+    else()
+        LIST( APPEND QRC_FILES Resource_Files/icon/app_icons_orig/app_icons.qrc )
+    endif()
+endif()
+
+set( MAIN_BINARY_QRC_FILES
+    Resource_Files/main/main.qrc
+    )
+set( FLUENT_BINARY_QRC_FILES
+    Resource_Files/fluent/fluent.qrc
+    )
+set( MATERIAL_BINARY_QRC_FILES
+    Resource_Files/material/material.qrc
     )
 
 if ( APPLE )
@@ -584,7 +615,7 @@ set( LINUX_DESKTOP_FILE
     )
 
 set( LINUX_DESKTOP_ICON_FILE
-    Resource_Files/icon/app_icon_48.png
+    app_icon_48.png
     )
 
 set( LINUX_LAUNCH_INSTALL_SCRIPT
@@ -632,8 +663,18 @@ set_property( SOURCE ${UI_FILES_H} PROPERTY SKIP_AUTOMOC ON )
 # Runs RCC on specified files
 qt5_add_resources( QRC_FILES_CPP ${QRC_FILES} )
 set_property( SOURCE ${QRC_FILES_CPP} PROPERTY SKIP_AUTOMOC ON )
+qt5_add_binary_resources( main  ${MAIN_BINARY_QRC_FILES} )
+qt5_add_binary_resources( fluent ${FLUENT_BINARY_QRC_FILES} )
+qt5_add_binary_resources( material ${MATERIAL_BINARY_QRC_FILES} )
 # Runs lrelease on the specified files
 qt5_add_translation( QM_FILES ${TS_FILES} )
+
+# Compiled binary resource files
+set( EXT_RCC_FILES
+    ${PROJECT_BINARY_DIR}/main.rcc
+    ${PROJECT_BINARY_DIR}/fluent.rcc
+    ${PROJECT_BINARY_DIR}/material.rcc
+    )
 
 # Define the Sigil version string for use in source files
 set_source_files_properties( Dialogs/About.cpp PROPERTIES COMPILE_DEFINITIONS SIGIL_FULL_VERSION="${SIGIL_FULL_VERSION}" )
@@ -671,9 +712,10 @@ set( MATHJAX_ZIP "${CMAKE_SOURCE_DIR}/src/Resource_Files/polyfills/ML.zip" )
 # Grab the current year so copyright notice is updated on Windows file properties
 string( TIMESTAMP SIGIL_BUILD_YEAR "%Y" )
 if ( WIN32 )
+    configure_file( Resource_files/windows/icon.rc.in ${PROJECT_BINARY_DIR}/icon.rc )
     configure_file( Resource_files/windows/version.rc.in ${PROJECT_BINARY_DIR}/version.rc )
     set( WINDOWS_RC_FILES
-         Resource_Files/icon/icon.rc
+         ${PROJECT_BINARY_DIR}/icon.rc
          ${PROJECT_BINARY_DIR}/version.rc
          )
     list( APPEND ALL_SOURCES ${WINDOWS_RC_FILES} )
@@ -687,12 +729,17 @@ if( APPLE )
     # TODO: put these in some sort of add_custom_command( TARGET ${PROJECT_NAME} PRE_BUILD COMMAND ...)
     # also delete the Sigil.app folder as PRE_BUILD of Sigil executable
 
+    if ( USE_ALT_ICONS )
+        set( ICON_SRC_PATH  ${PROJECT_SOURCE_DIR}/Resource_Files/icon/app_icons_alt/Sigil.icns )
+    else()
+        set( ICON_SRC_PATH  ${PROJECT_SOURCE_DIR}/Resource_Files/icon/app_icons_orig/Sigil.icns )
+    endif()
+
     if( CMAKE_GENERATOR STREQUAL Xcode )
         exec_program("mkdir -p ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/Sigil.app/Contents/Resources")
         exec_program("mkdir -p ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/Sigil.app/Contents/polyfills")
         exec_program("unzip ${MATHJAX_ZIP} -d ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/Sigil.app/Contents/polyfills")
-        exec_program("cp ${PROJECT_SOURCE_DIR}/Resource_Files/icon/Sigil.icns ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/Sigil.app/Contents/Resources")
-        exec_program("cp ${PROJECT_SOURCE_DIR}/Resource_Files/icon/sgf.icns ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/Sigil.app/Contents/Resources")
+        exec_program("cp ${ICON_SRC_PATH} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/Sigil.app/Contents/Resources")
         exec_program("cp ${PROJECT_SOURCE_DIR}/Resource_Files/icon/epub.icns ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/Sigil.app/Contents/Resources")
         # Create translation directory.
         exec_program("mkdir -p ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/Sigil.app/Contents/translations")
@@ -706,8 +753,7 @@ if( APPLE )
         exec_program("mkdir -p ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sigil.app/Contents/Resources")
         exec_program("mkdir -p ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sigil.app/Contents/polyfills")
         exec_program("unzip ${MATHJAX_ZIP} -d ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sigil.app/Contents/polyfills")
-        exec_program("cp ${PROJECT_SOURCE_DIR}/Resource_Files/icon/Sigil.icns ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sigil.app/Contents/Resources")
-        exec_program("cp ${PROJECT_SOURCE_DIR}/Resource_Files/icon/sgf.icns ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sigil.app/Contents/Resources")
+        exec_program("cp ${ICON_SRC_PATH} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sigil.app/Contents/Resources")
         exec_program("cp ${PROJECT_SOURCE_DIR}/Resource_Files/icon/epub.icns ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sigil.app/Contents/Resources")
         # Create translation directory.
         exec_program("mkdir -p ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sigil.app/Contents/translations")
@@ -851,6 +897,7 @@ if( APPLE )
     if ( PKG_SYSTEM_PYTHON )
         add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD COMMAND ${PYTHON_EXECUTABLE} ARGS ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/osx_add_python_framework.py )
     endif()
+    add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD COMMAND cp ${PROJECT_BINARY_DIR}/*.rcc ${WORK_DIR}/Sigil.app/Contents/Resources/ )
     add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD COMMAND cp ${CMAKE_SOURCE_DIR}/src/Resource_Files/examples/* ${WORK_DIR}/Sigil.app/Contents/examples )
     add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD COMMAND cp ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../lib/*.dylib ${WORK_DIR}/Sigil.app/Contents/lib/ )
     add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD COMMAND install_name_tool -rpath ${CMAKE_BINARY_DIR}/lib "@executable_path/../lib" ${WORK_DIR}/Sigil.app/Contents/MacOS/Sigil )
@@ -867,7 +914,12 @@ elseif (MSVC)
     set( MAIN_PACKAGE_DIR ${TEMP_PACKAGE_DIR}/Sigil )
     set( OUTPUT_PACKAGE_DIR ${CMAKE_BINARY_DIR}/installer )
     set( PYTHON_DEST_DIR ${MAIN_PACKAGE_DIR}/python3 )
-    set( VCREDIST_VER "2017" ) 
+    set( VCREDIST_VER "2017" )
+    if ( USE_ALT_ICONS )
+        set( ICON_SRC_PATH  ${PROJECT_SOURCE_DIR}/Resource_Files/icon/app_icons_alt )
+    else()
+        set( ICON_SRC_PATH  ${PROJECT_SOURCE_DIR}/Resource_Files/icon/app_icons_orig )
+    endif()
 
     # ISS conf file for the Inno Setup compiler
     # We first create a CMake configured version of the ISS file,
@@ -969,6 +1021,10 @@ elseif (MSVC)
                         COMMAND ${PYTHON_EXECUTABLE} ARGS ${CMAKE_BINARY_DIR}/windows_python_gather.py )
     endif()
 
+    # Add external binary resource files
+    add_custom_command( TARGET ${TARGET_FOR_COPY} PRE_BUILD COMMAND cmake -E make_directory ${MAIN_PACKAGE_DIR}/iconthemes/ )
+    add_custom_command( TARGET ${TARGET_FOR_COPY} POST_BUILD COMMAND cmake -E copy ${EXT_RCC_FILES} ${MAIN_PACKAGE_DIR}/iconthemes )
+
     # Copy the example files
     add_custom_command( TARGET ${TARGET_FOR_COPY} PRE_BUILD COMMAND cmake -E make_directory ${MAIN_PACKAGE_DIR}/examples/ )
     foreach( EXAMPLE ${EXAMPLE_FILES} )
@@ -1018,11 +1074,11 @@ elseif (MSVC)
 
     # Copy the icon file (used on Linux for the application icon)
     add_custom_command( TARGET ${TARGET_FOR_COPY} PRE_BUILD
-                        COMMAND cmake -E copy ${PROJECT_SOURCE_DIR}/Resource_Files/icon/app_icon_48.png ${MAIN_PACKAGE_DIR}/misc/ )
+                        COMMAND cmake -E copy ${ICON_SRC_PATH}/app_icon_48.png ${MAIN_PACKAGE_DIR}/misc/ )
 
     # Copy the SGF ICO file (used on Windows as the SGF file type icon)
-    add_custom_command( TARGET ${TARGET_FOR_COPY} PRE_BUILD
-                        COMMAND cmake -E copy ${PROJECT_SOURCE_DIR}/Resource_Files/icon/sgf.ico ${MAIN_PACKAGE_DIR}/misc/ )
+    #add_custom_command( TARGET ${TARGET_FOR_COPY} PRE_BUILD
+    #                    COMMAND cmake -E copy ${PROJECT_SOURCE_DIR}/Resource_Files/icon/sgf.ico ${MAIN_PACKAGE_DIR}/misc/ )
 
     # Remove the temp directory used for building the installer
     add_custom_command( TARGET makeinstaller POST_BUILD
@@ -1109,11 +1165,28 @@ if( UNIX AND NOT APPLE )
         install( FILES ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libxml2.so.2 DESTINATION ${CMAKE_INSTALL_LIBDIR}/sigil )
     endif()
     install( FILES ${LINUX_DESKTOP_FILE} DESTINATION ${SHARE_INSTALL_PREFIX}/share/applications/ )
-    install( FILES ${LINUX_DESKTOP_ICON_FILE} DESTINATION ${SHARE_INSTALL_PREFIX}/share/pixmaps RENAME sigil.png )
+
+    if ( USE_ALT_ICONS )
+        set( ICON_SRC_PATH  ${PROJECT_SOURCE_DIR}/Resource_Files/icon/app_icons_alt )
+    else()
+        set( ICON_SRC_PATH  ${PROJECT_SOURCE_DIR}/Resource_Files/icon/app_icons_orig )
+    endif()
+    if( INSTALL_HICOLOR_ICONS )
+        set( ICON_SIZE 16 32 48 64 128 256 512)
+        foreach( SIZE ${ICON_SIZE} )
+            install( FILES ${ICON_SRC_PATH}/app_icon_${SIZE}.png DESTINATION
+                               ${SHARE_INSTALL_PREFIX}/share/icons/hicolor/${SIZE}x${SIZE}/apps RENAME sigil.png )
+        endforeach( SIZE )
+        install( FILES ${ICON_SRC_PATH}/app_icon_scalable.svg DESTINATION
+                               ${SHARE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps RENAME sigil.svg )
+    else()
+        install( FILES ${ICON_SRC_PATH}/${LINUX_DESKTOP_ICON_FILE} DESTINATION ${SHARE_INSTALL_PREFIX}/share/pixmaps RENAME sigil.png )
+    endif()
     install( FILES ${QM_FILES} DESTINATION ${SIGIL_SHARE_ROOT}/translations/ )
     if ( INSTALL_BUNDLED_DICTS )
         install( FILES ${DIC_FILES} DESTINATION ${SIGIL_SHARE_ROOT}/hunspell_dictionaries/ )
     endif()
+    install( FILES ${EXT_RCC_FILES} DESTINATION ${SIGIL_SHARE_ROOT}/iconthemes/ )
     if ( MATHJAX_DIR )
         install( FILES ${CMAKE_SOURCE_DIR}/src/Resource_Files/polyfills/SIGIL_EBOOK_MML_SVG.js DESTINATION ${MATHJAX_DIR}/config/local/ )
     else()

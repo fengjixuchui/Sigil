@@ -72,6 +72,9 @@ static const QString URL_ATTRIBUTE_SEARCH = ":.*(url\\s*\\([^\\)]+\\))";
 
 const QString BREAK_TAG_SEARCH  = "(<div>\\s*)?<hr\\s*class\\s*=\\s*\"[^\"]*(sigil_split_marker|sigilChapterBreak)[^\"]*\"\\s*/>(\\s*</div>)?";
 
+static const QString NEXT_TAG_LOCATION      = "<[^!>]+>";
+static const QString TAG_NAME_SEARCH        = "<\\s*([^\\s>]+)";
+
 // Resolves custom ENTITY declarations
 QString XhtmlDoc::ResolveCustomEntities(const QString &source)
 {
@@ -280,14 +283,54 @@ XhtmlDoc::WellFormedError XhtmlDoc::GumboWellFormedErrorForSource(const QString 
 XhtmlDoc::WellFormedError XhtmlDoc::WellFormedErrorForSource(const QString &source, QString version)
 {
     QXmlStreamReader reader(source);
+    int ndoctypes = 0;
+    int nhtmltags = 0;
+    int nheadtags = 0;
+    int nbodytags = 0;
+
     while (!reader.atEnd()) {
         reader.readNext();
+        if (reader.isDTD()) ndoctypes++;
+        if (reader.isStartElement()) {
+            if (reader.name() == "html") nhtmltags++;
+            if (reader.name() == "head") nheadtags++;
+            if (reader.name() == "body") nbodytags++;
+        }
     }
     if (reader.hasError()) {
         XhtmlDoc::WellFormedError error;
         error.line    = reader.lineNumber();
         error.column  = reader.columnNumber();
         error.message = QString(reader.errorString());
+        return error;
+    }
+    // make sure basic structure in place
+    if (ndoctypes != 1) {
+        XhtmlDoc::WellFormedError error;
+        error.line    = 1;
+        error.column  = 1;
+        error.message = "Missing DOCTYPE";
+        return error;
+    }
+    if (nhtmltags != 1) {
+        XhtmlDoc::WellFormedError error;
+        error.line    = 1;
+        error.column  = 1;
+        error.message = "Missing html tag";
+        return error;
+    }
+    if (nheadtags != 1) {
+        XhtmlDoc::WellFormedError error;
+        error.line    = 1;
+        error.column  = 1;
+        error.message = "Missing head tag";
+        return error;
+    }
+    if (nbodytags != 1) {
+        XhtmlDoc::WellFormedError error;
+        error.line    = 1;
+        error.column  = 1;
+        error.message = "Missing body tag";
         return error;
     }
     return XhtmlDoc::WellFormedError();
@@ -367,26 +410,30 @@ QStringList XhtmlDoc::GetSGFSectionSplits(const QString &source,
     while (main_index != body_end) {
         QRegularExpressionMatch match = break_tag.match(source, main_index);
         QString body;
+        QStringList open_tag_list;
 
         // We search for our HR break tag
         if (match.hasMatch()) {
             // We break up the remainder of the file on the HR tag index if it's found
             int break_index = match.capturedStart();
             body = Utility::Substring(main_index, break_index, source);
+            open_tag_list = GetUnmatchedTagsForPosition(main_index, source);
             main_index = break_index + match.capturedLength();
         } else {
             // Otherwise, we take the rest of the file
             body = Utility::Substring(main_index, body_end, source);
+            open_tag_list = GetUnmatchedTagsForPosition(main_index, source);
             main_index = body_end;
         }
-
-        sections.append(header + body + "</body> </html>");
+        QString open_tag_source = "";
+        if (!open_tag_list.isEmpty()) open_tag_source = open_tag_list.join(" ");
+        sections.append(header + open_tag_source + body + "</body> </html>");
     }
 
     return sections;
 }
 
-
+// return all links in raw encoded form
 QStringList XhtmlDoc::GetLinkedStylesheets(const QString &source)
 {
     QList<XhtmlDoc::XMLElement> link_tag_nodes;
@@ -408,7 +455,7 @@ QStringList XhtmlDoc::GetLinkedStylesheets(const QString &source)
             element.attributes.contains("rel") &&
             (element.attributes.value("rel").toLower() == "stylesheet") &&
             element.attributes.contains("href")) {
-            linked_css_paths.append(Utility::URLDecodePath(element.attributes.value("href")));
+           linked_css_paths.append(element.attributes.value("href"));
         }
     }
     return linked_css_paths;
@@ -544,16 +591,16 @@ GumboNode *XhtmlDoc::GetAncestorIDElement(GumboInterface &gi, GumboNode *node)
 }
 
 
-// the returned paths are the href attribute values url decoded
+// the returned paths are the raw href attribute values url encoded
 QStringList XhtmlDoc::GetHrefSrcPaths(const QString &source)
 {
     QStringList destination_paths;
     GumboInterface gi = GumboInterface(source, "any_version");
     foreach(QString apath, gi.get_all_values_for_attribute("src")) {
-	destination_paths << Utility::URLDecodePath(apath);
+	destination_paths << apath;
     }
     foreach(QString apath, gi.get_all_values_for_attribute("href")) {
-	destination_paths << Utility::URLDecodePath(apath);
+	destination_paths << apath;
     }
     destination_paths.removeDuplicates();
     return destination_paths;
@@ -580,10 +627,13 @@ QStringList XhtmlDoc::GetPathsToStyleFiles(const QString &source)
         GumboNode* node = nodes.at(i);
         GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, "href");
         if (attr) {
-            QString relative_path = Utility::URLDecodePath(QString::fromUtf8(attr->value));
-            QFileInfo file_info(relative_path);
-            if (file_info.suffix().toLower() == "css") {
-                style_paths << relative_path;
+            QString relative_path = QString::fromUtf8(attr->value);
+            if (relative_path.indexOf(":") == -1) {
+                std::pair<QString, QString> parts = Utility::parseRelativeHREF(relative_path);
+                QFileInfo file_info(parts.first);
+                if (file_info.suffix().toLower() == "css") {
+                    style_paths << parts.first;
+                }
             }
         }
   }
@@ -639,8 +689,11 @@ QStringList XhtmlDoc::GetAllMediaPathsFromMediaChildren(const QString & source, 
             if (attr && attr->attr_namespace != GUMBO_ATTR_NAMESPACE_XLINK) attr = NULL;
         }
         if (attr) {
-            QString relative_path = Utility::URLDecodePath(QString::fromUtf8(attr->value));
-            media_paths << relative_path;
+            QString relative_path = QString::fromUtf8(attr->value);
+            if (relative_path.indexOf(":") == -1) {
+                std::pair<QString, QString> parts = Utility::parseRelativeHREF(relative_path);
+                media_paths << parts.first;
+            }
         }
     }
     return media_paths;
@@ -670,4 +723,86 @@ XhtmlDoc::XMLElement XhtmlDoc::CreateXMLElement(QXmlStreamReader &reader)
     element.text = reader.readElementText(QXmlStreamReader::IncludeChildElements);
 
     return element;
+}
+
+
+// FIXME:  Direct copy from the CodeViewEditor implementation as it was not accessible as a general tool
+// FIXME:  Rewrite this to Use TagLister as it is more reliable than regular expressions
+QStringList XhtmlDoc::GetUnmatchedTagsForPosition(const int &start_pos, const QString &text)
+{
+    // Given the specified position within the text, keep looking backwards finding
+    // any tags until we hit all open block tags within the body. Append all the opening tags
+    // that do not have closing tags together (ignoring self-closing tags)
+    // and return the opening tags complete with their attributes contiguously.
+    QStringList opening_tags;
+    int closing_tag_count = 0;
+    int pos = start_pos;
+    QString tag_name;
+    QRegularExpression tag_search(NEXT_TAG_LOCATION);
+    QRegularExpression tag_name_search(TAG_NAME_SEARCH);
+    pos--;
+
+    while (true) {
+        int previous_tag_index = -1;
+        int tag_search_len = 0;
+        QRegularExpressionMatchIterator i = tag_search.globalMatch(text);
+        while (i.hasNext()) {
+            QRegularExpressionMatch mo = i.next();
+            int start = mo.capturedStart();
+            if (start > pos) {
+                break;
+            }
+            previous_tag_index = start;
+            tag_search_len = mo.capturedLength();
+        }
+
+        if (previous_tag_index < 0) {
+            break;
+        }
+
+        // We found a tag. Is it self-closing? If so, ignore it.
+        const QString &full_tag_text = text.mid(previous_tag_index, tag_search_len);
+
+        if (full_tag_text.endsWith("/>")) {
+            pos = previous_tag_index - 1;
+            continue;
+        }
+
+        // Is it valid with a name? If not, ignore it
+        QRegularExpressionMatch tag_name_search_mo = tag_name_search.match(full_tag_text);
+        int tag_name_index = tag_name_search_mo.capturedStart();
+
+        if (tag_name_index < 0) {
+            pos = previous_tag_index - 1;
+            continue;
+        }
+
+        tag_name = tag_name_search_mo.captured(1).toLower();
+
+        if (tag_name == "body") {
+            break;
+        }
+
+        // Isolate whether it was opening or closing tag.
+        if (tag_name.startsWith('/')) {
+            tag_name = tag_name.right(tag_name.length() - 1);
+            closing_tag_count++;
+        } else {
+            // Add the whole tag text to our opening tags if we haven't found a closing tag for it.
+            if (closing_tag_count > 0) {
+                closing_tag_count--;
+            } else {
+                opening_tags.insert(0, full_tag_text);
+            }
+        }
+
+        pos = previous_tag_index - 1;
+        continue;
+    }
+
+    if (opening_tags.count() > 0) {
+        return opening_tags;
+    }
+
+    return QStringList();
 }

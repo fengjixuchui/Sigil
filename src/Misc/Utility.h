@@ -83,6 +83,11 @@ public:
     // For instance, "test" and "TEST" return false, "teSt" returns true.
     static bool IsMixedCase(const QString &string);
 
+    // Returns a substring of a QStringRef as a real string
+    // the characters included are in the interval:
+    // [ start_index, end_index >
+    static QString Substring(int start_index, int end_index, const QStringRef &string);
+
     // Returns a substring of a specified string;
     // the characters included are in the interval:
     // [ start_index, end_index >
@@ -153,6 +158,7 @@ public:
      * @param path The path to encode.
      * @return The encoded path string.
      */
+    static bool NeedToPercentEncode(uint cp);
     static QString URLEncodePath(const QString &path);
 
     /**
@@ -207,7 +213,9 @@ public:
     // both the "from" and "to" book paths are to FILES
     static QString buildRelativePath(const QString &from_file_bkpath, const QString &to_file_bkpath);
 
-    static std::pair<QString, QString> parseHREF(const QString &relative_href);
+    static std::pair<QString, QString> parseRelativeHREF(const QString &relative_href);
+    
+    static QString buildRelativeHREF(const QString &apath, const QString &afrag);
     
     static QString startingDir(const QString &file_bookpath);
 
@@ -226,6 +234,9 @@ public:
     
     // return the qbrushes for ValidationResultsView
     static QBrush ValidationResultBrush(const Val_Msg_Type &valres);
+
+    // parse a line of data from a csv file into a list of string values
+    static QStringList parseCSVLine(const QString &data);
 };
 #endif // UTILITY_H
 

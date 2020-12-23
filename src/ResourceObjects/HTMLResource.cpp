@@ -1,6 +1,6 @@
 /************************************************************************
 **
-**  Copyright (C) 2015-2019 Kevin B. Hendricks Stratford, ON, Canada 
+**  Copyright (C) 2015-2020 Kevin B. Hendricks Stratford, ON, Canada 
 **  Copyright (C) 2009-2011 Strahinja Markovic  <strahinja.markovic@gmail.com>
 **
 **  This file is part of Sigil.
@@ -38,6 +38,12 @@ const QString XML_NAMESPACE_CRUFT = "xmlns=\"http://www.w3.org/1999/xhtml\"";
 const QString REPLACE_SPANS = "<span class=\"SigilReplace_\\d*\"( id=\"SigilReplace_\\d*\")*>";
 
 const QString XML_TAG = "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"no\"?>";
+
+const QStringList RTL_LC = QStringList() << "ar" << "arc" << "dv" << "div" << "fa" <<
+                                            "fas" << "per" << "ha" << "hau" << "he" << 
+                                            "heb" << "khw" << "ks" << "kas" << "ku" <<
+                                            "kur" << "ps" << "pus" << "snd" << "sd" <<
+                                            "urd" << "ur" << "yi" << "yid"; 
 
 HTMLResource::HTMLResource(const QString &mainfolder, const QString &fullfilepath,
                            const QHash<QString, Resource *> &resources,
@@ -106,7 +112,10 @@ QStringList HTMLResource::GetLinkedStylesheets()
     QString startdir = GetFolder();
     QStringList stylesheet_bookpaths;
     foreach(QString ahref, hreflist) {
-        stylesheet_bookpaths << Utility::buildBookPath(ahref,startdir); 
+        if (ahref.indexOf(":") == -1) {
+            std::pair<QString, QString> parts = Utility::parseRelativeHREF(ahref);
+            stylesheet_bookpaths << Utility::buildBookPath(parts.first, startdir);
+        }
     }
     return stylesheet_bookpaths;
 }
@@ -163,21 +172,115 @@ QStringList HTMLResource::GetPathsToLinkedResources()
         }
         GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, "href");
         if (attr) {
-	    QString attpath = Utility::URLDecodePath(QString::fromUtf8(attr->value));
-	    if (attpath.indexOf(":") == -1) {
+	    QString href = QString::fromUtf8(attr->value);
+	    if (href.indexOf(":") == -1) {
+                QUrl target_url(href);
+                QString attpath = target_url.path();
 	        linked_resources.append(Utility::buildBookPath(attpath,GetFolder()));
 	    }
             continue;
         }
         attr = gumbo_get_attribute(&node->v.element.attributes, "src");
         if (attr) {
-	    QString attpath = Utility::URLDecodePath(QString::fromUtf8(attr->value));
-	    if (attpath.indexOf(":") == -1) {
+	    QString href = QString::fromUtf8(attr->value);
+	    if (href.indexOf(":") == -1) {
+                QUrl target_url(href);
+                QString attpath = target_url.path();
 	        linked_resources.append(Utility::buildBookPath(attpath,GetFolder()));
 	    }
         }
     }
     return linked_resources;
+}
+
+QString HTMLResource::GetLanguageAttribute()
+{
+    GumboInterface gi = GumboInterface(GetText(),GetEpubVersion());
+    gi.parse();
+    QList<GumboNode*> htmltags = gi.get_all_nodes_with_tag(GUMBO_TAG_HTML);
+    if (htmltags.count() != 1) return "";
+    GumboNode* node = htmltags.at(0);
+    QString lang="";
+    GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, "xml:lang");
+    if (attr) {
+        lang = QString::fromUtf8(attr->value);
+        return lang;
+    }
+    attr = gumbo_get_attribute(&node->v.element.attributes, "lang");
+    if (attr) {
+        lang = QString::fromUtf8(attr->value);
+    }
+    return lang;
+}
+
+void HTMLResource::SetLanguageAttribute(const QString& langcode)
+{
+    QString lc(langcode);
+    QString version = GetEpubVersion();
+    GumboInterface gi = GumboInterface(GetText(),version);
+    gi.parse();
+    QList<GumboNode*> htmltags = gi.get_all_nodes_with_tag(GUMBO_TAG_HTML);
+    if (htmltags.count() != 1) return;
+    GumboNode* node = htmltags.at(0);
+    if (lc.isEmpty()) {
+        // remove any xml:lang or lang attributes on the html node
+        GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, "lang");
+        GumboElement* element = &node->v.element;
+        if (attr) {
+            gumbo_element_remove_attribute(element, attr);
+        }
+        attr = gumbo_get_attribute(&node->v.element.attributes, "xml:lang");
+        if (attr) {
+            gumbo_element_remove_attribute(element, attr);
+        }
+        // remove any dir attribute as well
+        attr = gumbo_get_attribute(&node->v.element.attributes, "dir");
+        if (attr) {
+            gumbo_element_remove_attribute(element, attr);
+        }
+        SetText(gi.getxhtml());
+        return;
+    }
+    // we are adding or changing existing lang xml:lang attributes
+    QString sc(lc);
+    if (sc.length() > 3) sc=sc.mid(0,2);
+    if (version.startsWith("3")) {
+        // set the lang attribute (is not valid by spec on epub2 no matter what epubcheck says)
+        GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, "lang");
+        GumboElement* element = &node->v.element;
+        if (attr) {
+            // already exists so change its value
+            gumbo_attribute_set_value(attr, lc.toUtf8().constData());
+        } else {
+            // doesn't exist yet so add it
+            gumbo_element_set_attribute(element, "lang", lc.toUtf8().constData());
+        }
+    }
+    // set the xml:lang attribute on both epub2 and epub3
+    {
+        GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, "xml:lang");
+        GumboElement* element = &node->v.element;
+        if (attr) {
+            // already exists so change its value
+            gumbo_attribute_set_value(attr, lc.toUtf8().constData());
+        } else {
+            // doesn't exist yet so add it
+            gumbo_element_set_attribute(element, "xml:lang", lc.toUtf8().constData());
+        }
+    }
+    // set the dir attribute only if RTL language code
+    if (RTL_LC.contains(sc)){
+        GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, "dir");
+        GumboElement* element = &node->v.element;
+        if (attr) {
+            // already exists so change its value
+            gumbo_attribute_set_value(attr, "rtl");
+        } else {
+            // doesn't exist yet so add it
+            gumbo_element_set_attribute(element, "dir", "rtl");
+        }
+    }
+    SetText(gi.getxhtml());
 }
 
 

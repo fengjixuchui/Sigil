@@ -114,12 +114,11 @@ QSharedPointer<Book> ImportHTML::GetBook(bool extract_metadata)
     if (m_EpubVersion.startsWith('2')) {
         NCXResource* ncx_resource = m_Book->GetNCX();
         if (!ncx_resource) {
-            // add NCX using "toc.ncx" with id "ncx",  right beside OPF
-            // this is done to match the default text in a new OPF
+            // add NCX using "toc.ncx" with id "ncx" right beside the opf
             QString ncxbookpath = Utility::startingDir(m_Book->GetOPF()->GetRelativePath()) + "/toc.ncx";
             ncx_resource = m_Book->GetFolderKeeper()->AddNCXToFolder(m_EpubVersion, ncxbookpath);
-            // No Need to create a new manifest id for it as the empty epub2 already has an entry for it.
-            // and already has "ncx" entry on the spine
+            QString NCXId = m_Book->GetOPF()->AddNCXItem(ncx_resource->GetFullPath(),"ncx");
+            m_Book->GetOPF()->UpdateNCXOnSpine(NCXId);
             // And properly fill the empty ncx with the default contents to point to the first xhtml file
             QString first_xhtml_bookpath = m_AddedBookPaths.at(0);
             ncx_resource->FillWithDefaultTextToBookPath(m_EpubVersion, first_xhtml_bookpath);
@@ -218,17 +217,28 @@ void ImportHTML::UpdateFiles(HTMLResource *html_resource,
     QFileInfo hinfo = QFileInfo(m_FullFilePath);
     QDir folder(hinfo.absoluteDir());
     foreach(QString target, TargetPaths) {
-	QString target_file = hinfo.absolutePath() + "/" + target;
-	target_file = Utility::resolveRelativeSegmentsInFilePath(target_file, "/");
-	if (!QFile::exists(target_file)) {
-            html_updates[target_file] = "";
-	} else {
-	    // do not touch javascript links when importing html
-	    // even when they do exist as we do not import them
-	    if (QFileInfo(target_file).suffix() == "js") {
+        if (target.indexOf(":") == -1) {
+            std::pair<QString, QString> parts = Utility::parseRelativeHREF(target);
+	    QString target_file = hinfo.absolutePath() + "/" + parts.first;
+	    target_file = Utility::resolveRelativeSegmentsInFilePath(target_file, "/");
+	    if (!QFile::exists(target_file)) {
                 html_updates[target_file] = "";
+	    } else {
+		QString extension = QFileInfo(target_file).suffix();
+	        // do not touch javascript links when importing html
+	        // even when they do exist as we do not import them
+	        if (extension == "js") {
+                    html_updates[target_file] = "";
+	        }
+		// we also do not touch links to *other* xhtml files
+		if ((target_file != currentpath) &&
+		    (extension == "htm" ||
+		     extension == "html" ||
+		     extension == "xhtml")) {
+                    html_updates[target_file] = "";
+		}
 	    }
-	}
+        }
     }
     html_resource->SetText(PerformHTMLUpdates(newsource, newbookpath, html_updates, css_updates, currentpath, version)());
     html_resource->SetCurrentBookRelPath("");
