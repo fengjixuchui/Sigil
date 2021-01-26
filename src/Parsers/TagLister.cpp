@@ -1,6 +1,6 @@
 /************************************************************************
 **
-**  Copyright (C) 2020  Kevin B. Hendricks, Stratford Ontario
+**  Copyright (C) 2020-2021 Kevin B. Hendricks, Stratford Ontario
 **
 **  This file is part of Sigil.
 **
@@ -26,8 +26,7 @@
 #include <QDebug>
 
 #include "Misc/Utility.h"
-#include "Misc/TagAtts.h"
-#include "Misc/TagLister.h"
+#include "Parsers/TagLister.h"
 
 TagLister::TagLister(const QString &source)
     : m_source(source),
@@ -204,102 +203,100 @@ int TagLister::stopWhenContains(const QStringRef &tgt, const QString& stopchars,
 }
 
 
-void TagLister::parseAttributes(const QStringRef &tagstring, TagAtts& tattr)
+void TagLister::parseAttribute(const QStringRef &tagstring, const QString &attribute_name, AttInfo &ainfo)
 {
     int taglen = tagstring.length();
     QChar c = tagstring.at(1);
     int p = 0;
-    // first handle special cases
-    if (c == '?') {
-        tattr["special"] = Utility::Substring(1, taglen-1, tagstring);
-        return;
-    }
-    if (c == '!') {
-        if (tagstring.startsWith("<!--")) {
-            tattr["special"] = Utility::Substring(1, taglen-3, tagstring);
-        } else if (tagstring.startsWith("<!DOCTYPE")) {
-            tattr["special"] = Utility::Substring(1, taglen-1, tagstring);
-        } else if (tagstring.startsWith("<![CDATA[")) {
-            tattr["special"] = Utility::Substring(1, taglen-3, tagstring);
-        }
-        return;
-    }
 
-    // normal tag, extract tag name
+    ainfo.pos = -1;
+    ainfo.len = -1;
+    ainfo.aname = QString();
+    ainfo.avalue = QString();
+
+    // ignore comments, doctypes, cdata, pi, and xmlheaders
+    if ((c == '?') || (c == '!')) return;
+
+    // normal tag, skip over tag name
     p = skipAnyBlanks(tagstring, 1);
     if (tagstring.at(p) == "/") return; // end tag has no attributes
+    // int s = p;
     p = stopWhenContains(tagstring, ">/ \f\t\r\n", p);
-    int b = p;
+    // QString tagname = Utility::Substring(s, p, tagstring).trimmed();
 
     // handle the possibility of attributes (so begin or single tag type)
     while (tagstring.indexOf("=", p) != -1) {
         p = skipAnyBlanks(tagstring, p);
-        b = p;
+        int s = p;
         p = stopWhenContains(tagstring, "=", p);
-        QString aname = Utility::Substring(b, p, tagstring).trimmed();
+        QString aname = Utility::Substring(s, p, tagstring).trimmed();
+        if (aname == attribute_name) {
+            ainfo.pos = s;
+            ainfo.aname = aname;
+        }
         QString avalue;
         p++;
         p = skipAnyBlanks(tagstring, p);
         if ((tagstring.at(p) == "'") || (tagstring.at(p) == "\"")) {
             QString qc = tagstring.at(p);
             p++;
-            b = p;
+            int b = p;
             p = stopWhenContains(tagstring, qc, p);
             avalue = Utility::Substring(b, p, tagstring);
+            if (aname == attribute_name) {
+                ainfo.avalue = avalue;
+                ainfo.len = p - s + 1;
+            }
             p++;
         } else {
-            b = p;
+            int b = p;
             p = stopWhenContains(tagstring, ">/ ", p);
             avalue = Utility::Substring(b, p, tagstring);
+            if (aname == attribute_name) {
+                ainfo.avalue = avalue;
+                ainfo.len = p - s;
+            }
         }
-        tattr[aname] = avalue;
     }
     return;
 }
 
 
-QString TagLister:: serialize(const TagLister::TagInfo &ti, const TagAtts &tattr)
+QString TagLister::serializeAttribute(const QString& aname, const QString &avalue)
 {
-    QString res;
-    
-    // handle end tags
-    if (ti.ttype == "end") {
-        res = res + "</" + ti.tname + ">";
-        return res;
-    }
-    
-    // handle special cases
-    if (ti.ttype == "xmlheader") {
-        res = res + "<" + ti.tname + " " + tattr["special"] + ">";
-        return res;
-    }
-    if (ti.ttype == "comment") {
-        res = res + "<" + ti.tname + " " + tattr["special"] + "-->";
-        return res;
-    }
-    if (ti.ttype == "cdata") {
-        res = res + "<" + ti.tname + " " + tattr["special"] + "]]>";
-        return res;
-    }
-    if (ti.ttype == "doctype") {
-        res = res + "<" + ti.tname + " " + tattr["special"] + ">";
-        return res;
-    }
+    QString qc = "\"";
+    if (avalue.contains("\"")) qc = "'";
+    QString res = aname + "=" + qc + avalue + qc;
+    return res;
+}
 
-    // handle begin and single tages
-    res = res + "<" + ti.tname;
-    foreach(QString key, tattr.keys()) {
-        QString val = tattr[key];
-        if (val.contains("\"")) {
-            res = res + " " + key + "=" + "'" + val + "'";
-        } else {
-            res = res + " " + key + "=" + "\"" + val + "\"";
-        }
-    }
-    if (ti.ttype == "single") {
-        res = res + "/>";
-    } else {
-        res = res + ">";
-    }
+// extracts a copy of all attributes if any exist o.w. returns empty string
+QString TagLister::extractAllAttributes(const QStringRef &tagstring)
+{
+    int taglen = tagstring.length();
+    QChar c = tagstring.at(1);
+    int p = 0;
+
+    // ignore comments, doctypes, cdata, pi, and xmlheaders
+    if ((c == '?') || (c == '!')) return QString();
+    // normal tag, skip over any blanks before tag name
+    p = skipAnyBlanks(tagstring, 1);
+
+    if (tagstring.at(p) == "/") return QString(); // end tag has no attributes
+
+    // skip over tag name itself
+    p = stopWhenContains(tagstring, ">/ \f\t\r\n", p);
+
+    // skip any leading blanks before first attribute or tag end
+    p = skipAnyBlanks(tagstring, p);
+
+    // if any attributes exist
+    // Note: xml/xhtml does not support boolean attribute values without =)
+    if (tagstring.indexOf("=", p) == -1) return QString();
+    // properly handle both begin and single tags
+    QString res = tagstring.mid(p, taglen - 1 - p).toString(); // skip ending '>'
+    res = res.trimmed();
+    if (res.endsWith("/")) res = res.mid(0, res.length() - 1);
+    res = res.trimmed();
     return res;
 }

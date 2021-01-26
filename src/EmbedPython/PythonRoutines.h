@@ -25,8 +25,10 @@
 
 #include <QString>
 #include <QStringList>
+#include <QVariant>
+#include <QMetaType>
 
-#include "Misc/DiffRec.h"
+#include "EmbedPython/DiffRec.h"
 
 struct MetadataPieces {
     QString data;
@@ -98,4 +100,5 @@ private:
     
 };
 
+Q_DECLARE_METATYPE(QList<int>);
 #endif // PYTHONROUTINES_H

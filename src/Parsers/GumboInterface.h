@@ -1,6 +1,6 @@
 /************************************************************************
 **
-**  Copyright (C) 2015-2020 Kevin B. Hendricks Stratford, ON, Canada 
+**  Copyright (C) 2015-2021 Kevin B. Hendricks Stratford, ON, Canada 
 **  Copyright (C) 2012      John Schember <john@nachtimwald.com>
 **
 **  This file is part of Sigil.
@@ -30,6 +30,8 @@
 #include "gumbo.h"
 #include "gumbo_edit.h"
 
+#include "Query/CSelection.h"
+
 #include <QString>
 #include <QList>
 #include <QHash>
@@ -58,6 +60,10 @@ public:
     QString getxhtml();
     QString get_fragment_xhtml();
     
+    // gumbo-query interface
+    QList<GumboNode *> findnodes(const QString &aSelector);
+    CSelection find(const QString &aSelector);
+
     QString prettyprint(QString indent_chars="  ");
 
     // returns list tags that match manifest properties

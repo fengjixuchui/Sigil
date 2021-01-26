@@ -1,6 +1,6 @@
 /************************************************************************
 **
-**  Copyright (C) 2015-2020  Kevin Hendricks
+**  Copyright (C) 2015-2021  Kevin Hendricks
 **  Copyright (C) 2015       John Schember <john@nachtimwald.com>
 **
 **  This file is part of Sigil.
@@ -20,7 +20,7 @@
 **
 *************************************************************************/
 
-#include "Misc/EmbeddedPython.h"
+#include "EmbedPython/EmbeddedPython.h"
 #include <QString>
 #include <QByteArray>
 #include <QList>
@@ -38,30 +38,30 @@
 /**
  * Possibly Useful QMetaTypes::Type types
  *
- * QMetaType::Bool             1	bool
- * QMetaType::Int              2	int
- * QMetaType::UInt             3	unsigned int
- * QMetaType::Double           6	double
- * QMetaType::QChar            7	QChar
- * QMetaType::QString         10	QString
- * QMetaType::QByteArray      12	QByteArray
- * QMetaType::Long            32	long
- * QMetaType::LongLong         4	LongLong
- * QMetaType::Short           33	short
- * QMetaType::Char            34	char
- * QMetaType::ULong           35	unsigned long
- * QMetaType::ULongLong        5	ULongLong
- * QMetaType::UShort          36	unsigned short
- * QMetaType::SChar           40	signed char
- * QMetaType::UChar           37	unsigned char
- * QMetaType::Float           38	float
- * QMetaType::QVariant        41	QVariant
- * QMetaType::QVariantList     9	QVariantList
- * QMetaType::QStringList     11	QStringList
- * QMetaType::QVariantMap      8	QVariantMap
- * QMetaType::QVariantHash    28	QVariantHash
- * QMetaType::User           1024       Base value for User registered Type
- * QMetaType::UnknownType      0	This is an invalid type id. It is returned from QMetaType for types that are not registered
+ * QMetaType::Bool             1    bool
+ * QMetaType::Int              2    int
+ * QMetaType::UInt             3    unsigned int
+ * QMetaType::Double           6    double
+ * QMetaType::QChar            7    QChar
+ * QMetaType::QString         10    QString
+ * QMetaType::QByteArray      12    QByteArray
+ * QMetaType::Long            32    long
+ * QMetaType::LongLong         4    LongLong
+ * QMetaType::Short           33    short
+ * QMetaType::Char            34    char
+ * QMetaType::ULong           35    unsigned long
+ * QMetaType::ULongLong        5    ULongLong
+ * QMetaType::UShort          36    unsigned short
+ * QMetaType::SChar           40    signed char
+ * QMetaType::UChar           37    unsigned char
+ * QMetaType::Float           38    float
+ * QMetaType::QVariant        41    QVariant
+ * QMetaType::QVariantList     9    QVariantList
+ * QMetaType::QStringList     11    QStringList
+ * QMetaType::QVariantMap      8    QVariantMap
+ * QMetaType::QVariantHash    28    QVariantHash
+ * QMetaType::User          1024    Base value for User registered Type
+ * QMetaType::UnknownType      0    This is an invalid type id. It is returned from QMetaType for types that are not registered
  */
 
 
@@ -166,6 +166,7 @@ QMutex EmbeddedPython::m_mutex;
 
 EmbeddedPython* EmbeddedPython::m_instance = 0;
 int EmbeddedPython::m_pyobjmetaid = 0;
+int EmbeddedPython::m_listintmetaid = 0;
 PyThreadState * EmbeddedPython::m_threadstate = NULL;
 
 EmbeddedPython* EmbeddedPython::instance()
@@ -235,6 +236,7 @@ EmbeddedPython::EmbeddedPython()
     PyEval_InitThreads();
     m_threadstate = PyEval_SaveThread();
     m_pyobjmetaid = qMetaTypeId<PyObjectPtr>();
+    m_listintmetaid = qMetaTypeId<QList<int> >();
 }
 
 
@@ -245,6 +247,7 @@ EmbeddedPython::~EmbeddedPython()
         m_instance = 0;
     }
     m_pyobjmetaid = 0;
+    m_listintmetaid = 0;
     PyEval_RestoreThread(m_threadstate);
     Py_Finalize();
 }
@@ -579,12 +582,20 @@ PyObject* EmbeddedPython::QVariantToPyObject(const QVariant &v)
           {
             if ((QMetaType::Type)v.type() >= QMetaType::User && (v.userType() ==  m_pyobjmetaid))
             {
-
               PyObjectPtr op = v.value<PyObjectPtr>();
               value = op.object();
               // Need to increment object count otherwise will go away when Py_XDECREF used on pyargs
               Py_XINCREF(value);
 
+            } else if ((QMetaType::Type)v.type() >= QMetaType::User && (v.userType() ==  m_listintmetaid))
+            {
+              QList<int> alist = v.value<QList<int> >();
+              value = PyList_New(alist.size());
+              int pos = 0;
+              foreach(int i, alist) {
+                  PyList_SetItem(value, pos, Py_BuildValue("i", i));
+                  pos++;
+              }
             } else {
 
               // Ensure we don't have any holes.

@@ -1,6 +1,6 @@
 /************************************************************************
 **
-**  Copyright (C) 2020 Kevin B. Hendricks Stratford, ON, Canada 
+**  Copyright (C) 2020-2021 Kevin B. Hendricks Stratford, ON, Canada 
 **
 **  This file is part of Sigil.
 **
@@ -27,7 +27,6 @@
 class QString;
 class QStringRef;
 class QStringList;
-class TagAtts;
 
 class TagLister
 {
@@ -43,12 +42,21 @@ public:
         int     open_len; // set if end tag to length of its corresponding begin tag
     };
 
+    struct AttInfo {
+        int     pos;      // position of attribute relative to tag start
+        int     len;      // length of attribute in tag
+        QString aname;    // attribute name
+        QString avalue;   // attribute value
+    };
+
+
     TagLister(const QString &source);
     ~TagLister() {};
     void reload_lister(const QString &source);
     TagInfo get_next();
-    static void parseAttributes(const QStringRef &tagstring, TagAtts& tattr);
-    static QString serialize(const TagInfo &ti, const TagAtts & tattr);
+    static void parseAttribute(const QStringRef &tagstring, const QString &attribute_name, AttInfo& ainfo);
+    static QString serializeAttribute(const QString &aname, const QString &avalue);
+    static QString extractAllAttributes(const QStringRef &tagstring);
     
 private:
     QStringRef parseML();
